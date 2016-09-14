@@ -26,7 +26,7 @@ static const char* ast_node_names[] = {
 #undef DEFINE_NAME
 };
 
-typedef struct{
+typedef struct _ast_node{
   ast_node_type type;
   int col;
   int row;

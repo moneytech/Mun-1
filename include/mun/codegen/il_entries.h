@@ -38,6 +38,8 @@ struct _target_entry_instr{
   block_entry_instr block;
 };
 
+target_entry_instr* target_entry_new();
+
 #define to_graph_entry(i) container_of(container_of(i, block_entry_instr, instr), graph_entry_intr, block)
 
 HEADER_END

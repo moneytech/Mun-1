@@ -7,6 +7,11 @@
 HEADER_BEGIN
 
 typedef enum{
+  kConstant,
+  kReturn
+} instruction_tag;
+
+typedef enum{
   kUnboxedNumber,
   kBoxedNumber,
   kTagged,
@@ -43,9 +48,13 @@ struct _instruction{
   instruction* prev;
 
   representation rep;
+  instruction_tag id;
 
   const instruction_ops* ops;
 };
+
+#define is_constant(i) (i)->id == kConstant
+#define is_return(i) (i)->id == kReturn
 
 void instr_set_input_at(instruction* instr, word index, il_value* val);
 void instr_insert_after(instruction* instr, instruction* prev);
