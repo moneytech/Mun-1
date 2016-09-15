@@ -15,4 +15,19 @@ return_compile(instruction* instr, asm_buff* code){
   asm_ret(code);
 }
 
+void
+binary_op_compile(instruction* instr, asm_buff* code){
+
+}
+
+void
+load_local_compile(instruction* instr, asm_buff* code){
+
+}
+
+void
+store_local_compile(instruction* instr, asm_buff* code){
+
+}
+
 #endif

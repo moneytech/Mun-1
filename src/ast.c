@@ -37,6 +37,21 @@ binary_op_node_new(ast_node* left, ast_node* right, int operation){
   return OWNER(bop);
 }
 
+ast_node*
+load_local_node_new(local_variable* local){
+  NEW_NODE(load_local_node, kLoadLocalNode, ll);
+  ll->local = local;
+  return OWNER(ll);
+}
+
+ast_node*
+store_local_node_new(local_variable* local, ast_node* value){
+  NEW_NODE(store_local_node, kStoreLocalNode, sl);
+  sl->local = local;
+  sl->value = value;
+  return OWNER(sl);
+}
+
 int
 sequence_node_append(ast_node* n, ast_node* child){
   NODE_GUARD(n, sequence_node);
@@ -53,5 +68,7 @@ visit_ast(ast_node_visitor* visitor, ast_node* node){
     case kReturnNode: visitor->visit_return_node(visitor, node); break;
     case kSequenceNode: visitor->visit_sequence_node(visitor, node); break;
     case kBinaryOpNode: visitor->visit_binary_op_node(visitor, node); break;
+    case kLoadLocalNode: visitor->visit_load_local_node(visitor, node); break;
+    case kStoreLocalNode: visitor->visit_store_local_node(visitor, node); break;
   }
 }

@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "object.h"
+#include "local.h"
 
 HEADER_BEGIN
 
@@ -10,7 +11,9 @@ HEADER_BEGIN
   V(Return) \
   V(Literal) \
   V(Sequence) \
-  V(BinaryOp)
+  V(BinaryOp) \
+  V(LoadLocal) \
+  V(StoreLocal)
 
 #define MAX_SEQ_NODE_SIZE 0xFFFF
 
@@ -59,6 +62,19 @@ typedef struct{
   int operation;
 } binary_op_node;
 
+typedef struct{
+  ast_node node;
+
+  local_variable* local;
+} load_local_node;
+
+typedef struct{
+  ast_node node;
+
+  ast_node* value;
+  local_variable* local;
+} store_local_node;
+
 MUN_INLINE const char*
 ast_node_typeof(ast_node* node){
   return ast_node_names[node->type];
@@ -68,12 +84,16 @@ ast_node_typeof(ast_node* node){
 #define to_return_node(n) container_of(n, return_node, node)
 #define to_literal_node(n) container_of(n, literal_node, node)
 #define to_binary_op_node(n) container_of(n, binary_op_node, node)
+#define to_store_local_node(n) container_of(n, store_local_node, node)
+#define to_load_local_node(n) container_of(n, load_local_node, node)
 
 #define node_typeof(n) ((n)->type)
 #define is_sequence_node(n) ((n) && node_typeof(n) == kSequenceNode)
 #define is_return_node(n) ((n) && node_typeof(n) == kReturnNode)
 #define is_literal_node(n) ((n) && node_typeof(n) == kLiteralNode)
 #define is_binary_op_node(n) ((n) && node_typeof(n) = kBinaryOpNode)
+#define is_load_local_node(n) ((n) && node_typeof(n) == kLoadLocalNode)
+#define is_store_local_node(n) ((n) && node_typeof(n) == kStoreLocalNode)
 
 #define NODE_GUARD(Node, Type) \
   if(!is_##Type(Node)){ \
@@ -85,6 +105,8 @@ ast_node* return_node_new(ast_node* value);
 ast_node* literal_node_new(instance* value);
 ast_node* sequence_node_new();
 ast_node* binary_op_node_new(ast_node* left, ast_node* right, int operation);
+ast_node* load_local_node_new(local_variable* local);
+ast_node* store_local_node_new(local_variable* local, ast_node* value);
 
 int sequence_node_append(ast_node* seq, ast_node* child);
 
@@ -93,6 +115,8 @@ typedef struct _ast_node_visitor{
   void (*visit_binary_op_node)(struct _ast_node_visitor* vis, ast_node* op);
   void (*visit_literal_node)(struct _ast_node_visitor* vis, ast_node* lit);
   void (*visit_return_node)(struct _ast_node_visitor* vis, ast_node* ret);
+  void (*visit_load_local_node)(struct _ast_node_visitor*, ast_node*);
+  void (*visit_store_local_node)(struct _ast_node_visitor*, ast_node*);
 } ast_node_visitor;
 
 void visit_ast(ast_node_visitor* vis, ast_node* node);

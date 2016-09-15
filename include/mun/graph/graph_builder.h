@@ -21,6 +21,9 @@ graph* graph_build(graph_builder* builder);
 typedef struct{
   ast_node_visitor visitor;
 
+  void (*return_definition)(ast_node_visitor*, definition*);
+  void (*return_value)(ast_node_visitor*, il_value*);
+
   graph_builder* owner;
   instruction* exit;
   instruction* entry;
@@ -42,13 +45,6 @@ void evis_do(effect_visitor* vis, definition* defn);
 void evis_add_return_exit(effect_visitor* vis, il_value* val);
 void evis_add_instruction(effect_visitor* vis, instruction* instr);
 
-MUN_INLINE void
-evis_return_definition(effect_visitor* vis, definition* defn){
-  if(!is_constant(((instruction*) defn))){
-    evis_do(vis, defn);
-  }
-}
-
 il_value* evis_bind(effect_visitor* vis, definition* defn);
 
 typedef struct{
@@ -59,14 +55,17 @@ typedef struct{
 
 void vvis_init(value_visitor* vis);
 
+#define get_evis(v) container_of(v, effect_visitor, visitor)
+#define get_vvis(v) container_of(get_evis(v), value_visitor, effect)
+
 MUN_INLINE void
-vvis_return_value(value_visitor* vis, il_value* val){
-  vis->value = val;
+vis_return_value(ast_node_visitor* vis, il_value* val){
+  get_evis(vis)->return_value(vis, val);
 }
 
 MUN_INLINE void
-vvis_return_definition(value_visitor* vis, definition* defn){
-  vvis_return_value(vis, evis_bind(((effect_visitor*) vis), defn));
+vis_return_definition(ast_node_visitor* vis, definition* defn){
+  get_evis(vis)->return_definition(vis, defn);
 }
 
 HEADER_END
