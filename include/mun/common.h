@@ -40,6 +40,9 @@ typedef uintptr_t uword;
 
 static const int kWordSize = sizeof(word);
 
+static const word kBitsPerByte = 8;
+static const word kBitsPerWord = sizeof(word) * 8;
+
 #if defined(_M_X64) || defined(__x86_64__)
 #define ARCH_IS_64 1
 #elif defined(_M_IX86) || defined(__i386__)

@@ -63,6 +63,7 @@ typedef struct {
   char* name;
   int mods;
   uword code;
+  struct _ast_node* ast;
 
   struct {
     word num_params;
