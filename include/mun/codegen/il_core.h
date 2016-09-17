@@ -7,8 +7,8 @@
 HEADER_BEGIN
 
 typedef enum{
-  kConstant,
-  kReturn
+  kConstantTag,
+  kReturnTag
 } instruction_tag;
 
 typedef enum{
@@ -53,8 +53,8 @@ struct _instruction{
   const instruction_ops* ops;
 };
 
-#define is_constant(i) (i)->id == kConstant
-#define is_return(i) (i)->id == kReturn
+#define is_constant(i) (i)->id == kConstantTag
+#define is_return(i) (i)->id == kReturnTag
 
 void instr_set_input_at(instruction* instr, word index, il_value* val);
 void instr_insert_after(instruction* instr, instruction* prev);
@@ -65,6 +65,16 @@ MUN_INLINE void
 instr_link_to(instruction* instr, instruction* next){
   instr->next = next;
   next->prev = instr;
+}
+
+MUN_INLINE word
+instr_successor_count(instruction* instr){
+  return instr->ops->successor_count(instr);
+}
+
+MUN_INLINE block_entry_instr*
+instr_successor_at(instruction* instr, word index){
+  return instr->ops->successor_at(instr, index);
 }
 
 MUN_INLINE void
