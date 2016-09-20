@@ -5,6 +5,8 @@
 
 HEADER_BEGIN
 
+#include "local.h"
+
 #define FOR_EACH_TYPE(V) \
   V(String) \
   V(Number) \
@@ -26,7 +28,7 @@ typedef enum {
 #undef DEFINE_TAG
 } obj_tag;
 
-typedef struct {
+typedef struct _object_type{
   obj_tag type_id;
 } obj_type;
 
@@ -73,6 +75,8 @@ typedef struct {
     word first_param_index;
     word first_stack_local_index;
   } def;
+
+  local_scope* scope;
 } function;
 
 typedef struct {
@@ -86,6 +90,7 @@ instance* function_new(char* name, int mods);
 instance* table_new(word len);
 instance* boolean_new(bool value);
 instance* number_new(double value);
+instance* nil_new();
 
 #define to_lua_script(inst) container_of(inst, lua_script, type)
 #define to_function(inst) container_of(inst, function, type)

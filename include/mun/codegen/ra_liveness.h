@@ -8,7 +8,7 @@ HEADER_BEGIN
 
 #include "../bitvec.h"
 #include "../buffer.h"
-#include "il_entries.h"
+#include "intermediate_language.h"
 
 typedef struct _liveness_analysis{
   object_buffer live_out; // bit_vector*
@@ -33,6 +33,11 @@ liveness_get_live_out_at(liveness_analysis* analysis, word postorder){
 }
 
 MUN_INLINE bit_vector*
+liveness_get_kill_at(liveness_analysis* analysis, word postorder){
+  return buffer_at(&analysis->kill, postorder);
+}
+
+MUN_INLINE bit_vector*
 liveness_get_live_in(liveness_analysis* analysis, block_entry_instr* block){
   return liveness_get_live_in_at(analysis, block->postorder_num);
 }
@@ -44,7 +49,7 @@ liveness_get_live_out(liveness_analysis* analysis, block_entry_instr* block){
 
 MUN_INLINE bit_vector*
 liveness_get_kill(liveness_analysis* analysis, block_entry_instr* block){
-  return buffer_at(&analysis->kill, block->postorder_num);
+  return liveness_get_kill_at(analysis, block->postorder_num);
 }
 
 void liveness_analyze(liveness_analysis* analysis);

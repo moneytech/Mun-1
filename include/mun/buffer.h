@@ -65,6 +65,13 @@ buffer_truncate(object_buffer* self, word size){
   self->size = size;
 }
 
+MUN_INLINE void
+buffer_clone_into(object_buffer* self, object_buffer* other){
+  self->asize = self->size = other->size;
+  self->data = malloc(sizeof(V) * other->size);
+  memcpy(self->data, other->data, sizeof(V) * other->size);
+}
+
 MUN_INLINE bool
 buffer_is_empty(object_buffer* self){
   return self->size == 0;

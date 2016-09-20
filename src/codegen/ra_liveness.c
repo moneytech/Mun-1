@@ -53,7 +53,7 @@ liveness_analyze(liveness_analysis* analysis){
   for(word i = 0; i < analysis->postorder->size; i++){
     buffer_add(&analysis->live_out, bit_vec_new(analysis->var_count));
     buffer_add(&analysis->kill, bit_vec_new(analysis->var_count));
-    buffer_add(&analysis->live_out, bit_vec_new(analysis->var_count));
+    buffer_add(&analysis->live_in, bit_vec_new(analysis->var_count));
   }
 
   analysis->compute_initial_sets(analysis);

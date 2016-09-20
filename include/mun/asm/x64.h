@@ -1,6 +1,10 @@
 #ifndef MUN_X64_H
 #define MUN_X64_H
 
+#if !defined(MUN_CORE_H)
+#error "Please #include <mun/asm/core.h> directly"
+#endif
+
 #include "core.h"
 
 HEADER_BEGIN
@@ -94,6 +98,13 @@ static const asm_register SPREG = RSP;
 static const asm_register FPREG = RBP;
 
 static const asm_fpu_register FPUTMP = XMM0;
+
+#define kAllCpuRegistersList 0xFFFF
+#define kReservedCpuRegistersList \
+  (1 << SPREG) | \
+  (1 << FPREG) | \
+  (1 << TMP)
+#define kAvailableCpuRegistersList (kAllCpuRegistersList & ~kReservedCpuRegistersList)
 
 typedef struct{
   word pos;

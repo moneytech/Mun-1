@@ -3,7 +3,6 @@
 
 #include "common.h"
 #include "object.h"
-#include "local.h"
 
 HEADER_BEGIN
 
@@ -28,6 +27,8 @@ static const char* ast_node_names[] = {
   FOR_EACH_NODE(DEFINE_NAME)
 #undef DEFINE_NAME
 };
+
+typedef struct _local_variable local_variable;
 
 typedef struct _ast_node{
   ast_node_type type;

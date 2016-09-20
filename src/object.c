@@ -78,6 +78,12 @@ function_new(char* name, int mods){
   f->name = strdup(name);
   f->mods = mods;
   f->code = NULL;
+  f->scope = local_scope_new(NULL);
+  f->def.num_params = 0;
+  f->def.first_param_index = 0;
+  f->def.first_stack_local_index = 0;
+  f->def.num_copied_params = 0;
+  f->def.num_stack_locals = 0;
   return OWNER(f);
 }
 
@@ -103,4 +109,25 @@ table_new(word len){
   t->size = 0;
   t->asize = len;
   return &t->type;
+}
+
+instance nil = {
+    kNilTag
+};
+
+instance*
+nil_new(){
+  return &nil;
+}
+
+void
+function_allocate_variables(instance* func){
+  function* f = to_function(func);
+  local_scope* scope = f->scope;
+  f->def.first_param_index = kParamEndSlotFromFp + f->def.num_params;
+  f->def.first_stack_local_index = kFirstLocalSlotFromFp;
+  f->def.num_copied_params = 0;
+  int next_free_frame_index = local_scope_alloc_vars(scope, ((int) f->def.first_param_index), ((int) f->def.num_params), ((int) f->def.first_stack_local_index));
+  f->def.num_stack_locals = f->def.first_stack_local_index - next_free_frame_index;
+  printf("%li - %d\n", f->def.first_stack_local_index, next_free_frame_index);
 }

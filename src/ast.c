@@ -1,4 +1,5 @@
 #include <mun/ast.h>
+#include <mun/local.h>
 
 #define NEW_NODE(Type, ID, Var) \
   Type* Var = malloc(sizeof(Type)); \

@@ -1,5 +1,4 @@
-#include <mun/codegen/il_value.h>
-#include <mun/codegen/il_core.h>
+#include <mun/codegen/intermediate_language.h>
 
 il_value*
 value_new(definition* defn){

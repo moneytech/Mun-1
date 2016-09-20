@@ -1,5 +1,5 @@
 #include <sys/mman.h>
-#include <mun/asm/x64.h>
+#include <mun/asm/core.h>
 
 MUN_INLINE void
 emit_register_rex(asm_buff* self, asm_register reg, uint8_t rex) {

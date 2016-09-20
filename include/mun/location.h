@@ -5,10 +5,9 @@
 
 HEADER_BEGIN
 
-#include "asm/x64.h"
-#include "codegen/il_defs.h"
+#include "asm/core.h"
 
-typedef uword location;
+typedef struct _constant_instr constant_instr;
 
 static const uword kInvalidLocation = 0;
 
@@ -50,8 +49,8 @@ loc_is_unallocated(location loc){
   return loc_get_kind(loc) == kUnallocated;
 }
 
-inline bool loc_is_invalid(location loc);
-inline bool loc_is_constant(location loc);
+bool loc_is_invalid(location loc);
+bool loc_is_constant(location loc);
 
 MUN_INLINE asm_register
 loc_get_register(location loc){
@@ -63,7 +62,7 @@ loc_get_fpu_register(location loc){
   return ((asm_fpu_register) loc_get_payload(loc));
 }
 
-inline constant_instr* loc_get_constant(location loc);
+constant_instr* loc_get_constant(location loc);
 
 void loc_init(location* loc); // none
 void loc_init_s(location* loc); // same
@@ -79,7 +78,7 @@ void loc_hint_rx(location* loc); // hint requires fpu register
 #define NO_CALL 0x0
 #define CALL 0x1
 
-typedef struct{
+typedef struct _location_summary{
   bool contains_call: 1;
 
   location* inputs;

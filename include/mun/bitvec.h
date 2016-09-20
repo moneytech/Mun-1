@@ -2,6 +2,7 @@
 #define MUN_BITVEC_H
 
 #include "common.h"
+#include "iterator.h"
 
 HEADER_BEGIN
 
@@ -45,6 +46,23 @@ MUN_INLINE word
 sizefor(word len){
   return 1+ ((len - 1) / kBitsPerWord);
 }
+
+typedef struct{
+  iterator iter;
+
+  bit_vector* target;
+  word bit_index;
+  word word_index;
+  uword current_word;
+} bit_vector_iterator;
+
+bit_vector_iterator* bit_vector_iterator_new(bit_vector* vec);
+
+#define bit_vector_foreach(vec) \
+  foreach(bit_vector_iterator_new(vec))
+
+#define bit_vector_current \
+  (*((word*) it_current))
 
 HEADER_END
 

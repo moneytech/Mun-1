@@ -38,7 +38,23 @@ typedef int bool;
 typedef intptr_t word;
 typedef uintptr_t uword;
 
+typedef uintptr_t location;
+
 static const int kWordSize = sizeof(word);
+
+MUN_INLINE word*
+word_clone(word val){
+  word* w = malloc(sizeof(word));
+  memcpy(w, &val, sizeof(word));
+  return w;
+}
+
+MUN_INLINE bool*
+bool_clone(bool val){
+  bool* b = malloc(sizeof(bool));
+  memcpy(b, &val, sizeof(bool));
+  return b;
+}
 
 static const word kBitsPerByte = 8;
 static const word kBitsPerWord = sizeof(word) * 8;

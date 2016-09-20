@@ -81,24 +81,32 @@ live_range_define(live_range* self, word pos){
 use_position*
 live_range_add_use(live_range* self, word pos, location* slot){
   if(self->uses != NULL){
-    if((self->uses->pos == pos) && ((*self->uses->slot) == (*slot))) return self->uses;
-  } else if(self->uses->pos < pos){
-    use_position* insert_after = self->uses;
-    while((insert_after->next != NULL) && (insert_after->next->pos < pos)) insert_after = insert_after->next;
+    if((self->uses->pos == pos) &&
+        (self->uses->slot == slot)){
+      return self->uses;
+    } else if(self->uses->pos < pos){
+      use_position* insert_after = self->uses;
+      while((insert_after->next != NULL) &&
+          (insert_after->next->pos < pos)){
+        insert_after = insert_after->next;
+      }
 
-    use_position* insert_before = insert_after->next;
-    while((insert_before != NULL) && (insert_before->pos == pos)){
-      if((*insert_before->slot) == (*slot)) return insert_before;
+      use_position* insert_before = insert_after->next;
+      while((insert_before != NULL) && (insert_before->pos == pos)){
+        if(insert_before->slot == slot){
+          return insert_before;
+        }
+      }
+
+      use_position* next = malloc(sizeof(use_position));
+      use_pos_init(next, pos, insert_after->next, slot);
+      return insert_after->next = next;
     }
-
-    use_position* new = malloc(sizeof(use_position));
-    use_pos_init(new, pos, insert_after->next, slot);
-    return (insert_after->next = new);
   }
 
-  use_position* new = malloc(sizeof(use_position));
-  use_pos_init(new, pos, self->uses, slot);
-  return (self->uses = new);
+  self->uses = malloc(sizeof(use_position));
+  use_pos_init(self->uses, pos, self->uses, slot);
+  return self->uses;
 }
 
 void
@@ -184,7 +192,7 @@ live_range_split(live_range* self, word pos){
 
   use_position* first_after_split = split_lists(&self->uses, pos, split_at_start);
   use_interval* last_use_interval = (last_before == self->last_use_interval) ?
-                                    first_after_split :
+                                    first_after :
                                     self->last_use_interval;
 
   live_range* new_sibling = malloc(sizeof(live_range));

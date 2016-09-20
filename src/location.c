@@ -1,4 +1,5 @@
 #include <mun/location.h>
+#include <mun/codegen/intermediate_language.h>
 #include <mun/bitfield.h>
 
 enum{
@@ -112,7 +113,9 @@ location_summary*
 loc_summary_new(word in_count, word temp_count, bool call){
   location_summary* summary = malloc(sizeof(location_summary));
   summary->inputs = malloc(sizeof(location) * in_count);
+  summary->inputs_len = in_count;
   summary->temps = malloc(sizeof(location) * temp_count);
+  summary->temps_len = temp_count;
   summary->contains_call = call;
   return summary;
 }

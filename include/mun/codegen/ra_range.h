@@ -7,6 +7,7 @@ HEADER_BEGIN
 
 #include "../location.h"
 #include "ra_use.h"
+#include "intermediate_language.h"
 
 typedef struct _live_range live_range;
 
@@ -36,7 +37,7 @@ alloc_finger_update(alloc_finger* self, word pos){
   }
 }
 
-inline void alloc_finger_initialize(alloc_finger* self, live_range* range);
+void alloc_finger_initialize(alloc_finger* self, live_range* range);
 
 location alloc_finger_first_hint(alloc_finger* self);
 
@@ -82,7 +83,7 @@ live_range_end(live_range* range){
 }
 
 void live_range_define(live_range* range, word pos);
-inline void live_range_add_hinted(live_range* range, word pos, location* slot, location* hint);
+void live_range_add_hinted(live_range* range, word pos, location* slot, location* hint);
 void live_range_add_interval(live_range* range, word start, word end);
 
 live_range* live_range_split(live_range* range, word pos);

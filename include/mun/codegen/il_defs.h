@@ -1,10 +1,18 @@
 #ifndef MUN_IL_DEFS_H
 #define MUN_IL_DEFS_H
 
-#include <mun/local.h>
-#include "il_core.h"
+#if !defined(MUN_INTERMEDIATE_LANGUAGE_H)
+#error "Please #include <mun/codegen/intermediate_language.h> directly"
+#endif
+
+#include "../common.h"
 
 HEADER_BEGIN
+
+#include "intermediate_language.h"
+#include "../bitvec.h"
+
+typedef struct _local_variable local_variable;
 
 typedef struct{
   definition defn;
@@ -14,7 +22,7 @@ typedef struct{
 
 return_instr* return_new(il_value* val);
 
-typedef struct{
+typedef struct _constant_instr{
   definition defn;
 
   instance* value;
@@ -51,11 +59,37 @@ typedef struct{
 
 store_local_instr* store_local_new(local_variable* local, il_value* val);
 
+typedef struct _phi_instr{
+  definition defn;
+
+  bool alive;
+  join_entry_instr* block;
+  object_buffer inputs; // il_value*
+  bit_vector* reaching;
+} phi_instr;
+
+phi_instr* phi_new(join_entry_instr* join, word num_inputs);
+
 #define to_return(i) container_of(container_of(i, definition, instr), return_instr, defn)
 #define to_constant(i) container_of(container_of(i, definition, instr), constant_instr, defn)
 #define to_binary_op(i) container_of(container_of(i, definition, instr), binary_op_instr, defn)
 #define to_load_local(i) container_of(container_of(i, definition, instr), load_local_instr, defn)
 #define to_store_local(i) container_of(container_of(i, definition, instr), store_local_instr, defn)
+#define to_phi(i) container_of(container_of(i, definition, instr), phi_instr, defn)
+
+typedef struct{
+  iterator iter;
+
+  word index;
+  object_buffer* phis; // phi_instr*
+} phi_iterator;
+
+phi_iterator* phi_iterator_new(join_entry_instr* join);
+
+#define phis_foreach(join) foreach(phi_iterator_new(join))
+
+#define phis_current \
+  ((phi_instr*) it_current)
 
 HEADER_END
 

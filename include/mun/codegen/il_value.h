@@ -1,12 +1,14 @@
 #ifndef MUN_IL_VALUE_H
 #define MUN_IL_VALUE_H
 
+#if !defined(MUN_INTERMEDIATE_LANGUAGE_H)
+#error "Please #include <mun/codegen/intermediate_language.h> instead"
+#endif
+
 #include "../common.h"
+#include "intermediate_language.h"
 
 HEADER_BEGIN
-
-typedef struct _definition definition;
-typedef struct _instruction instruction;
 
 typedef struct _il_value{
   definition* defn;

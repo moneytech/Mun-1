@@ -41,6 +41,13 @@ asm_buff_size(asm_buff* self){
 
 void asm_buff_init(asm_buff* self);
 
+#if defined(ARCH_IS_64)
+#include "x64.h"
+#include "frame/x64.h"
+#else
+#error "Unknown CPU Architecture"
+#endif
+
 HEADER_END
 
 #endif

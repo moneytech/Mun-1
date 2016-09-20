@@ -2,14 +2,16 @@
 #define MUN_LOCAL_H
 
 #include "common.h"
-#include "object.h"
-#include "buffer.h"
 
 HEADER_BEGIN
 
+#include "buffer.h"
+#include "asm/core.h"
+
+typedef struct _object_type instance;
 typedef struct _local_scope local_scope;
 
-typedef struct{
+typedef struct _local_variable{
   char* name;
   local_scope* owner;
   int index;
@@ -26,6 +28,20 @@ local_var_is_constant(local_variable* var){
 MUN_INLINE bool
 local_var_has_index(local_variable* var){
   return var->index != -1;
+}
+
+#if defined(ARCH_IS_64)
+static const int kParamEndSlotFromFp = 1;
+static const int kFirstLocalSlotFromFp = -3;
+#else
+#error "Unsupported CPU Architecture"
+#endif
+
+MUN_INLINE int
+local_var_bit_index(local_variable* var, word param_count){
+  return (int) ((var->index > 0) ?
+           param_count - (var->index - kParamEndSlotFromFp) :
+           param_count - (var->index - kFirstLocalSlotFromFp));
 }
 
 typedef struct _local_scope{
