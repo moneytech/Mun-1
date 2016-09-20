@@ -42,6 +42,7 @@ typedef struct _location_summary location_summary;
 typedef struct _il_value il_value;
 typedef struct _block_entry_instr block_entry_instr;
 typedef struct _join_entry_instr join_entry_instr;
+typedef struct _graph_visitor graph_visitor;
 
 typedef struct{
   void (*set_input_at)(instruction*, word, il_value*);
@@ -61,6 +62,7 @@ typedef struct{
   il_value* (*input_at)(instruction*, word);
 
   char* (*name)();
+  void (*accept)(instruction*, graph_visitor*);
 } instruction_ops;
 
 struct _instruction{

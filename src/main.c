@@ -10,6 +10,7 @@
 #include <mun/codegen/intermediate_language.h>
 #include <mun/codegen/il_entries.h>
 #include <mun/codegen/il_core.h>
+#include <mun/graph/visitors/constant_propagation.h>
 
 int
 main(int argc, char** argv){

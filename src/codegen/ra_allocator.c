@@ -126,6 +126,7 @@ block_info_at(graph_allocator* self, word pos){
 
 MUN_INLINE live_range*
 get_live_range(graph_allocator* self, word vreg){
+  assert(vreg != -1);
   printf("Getting Live Range: %li\n", vreg);
   if(self->live_ranges.data[vreg] == NULL){
     printf("\tCreated #%li\n", vreg);
@@ -578,7 +579,7 @@ build_live_ranges(graph_allocator* self){
     block_info* info = block_info_at(self, block->start_pos);
 
     bit_vector_foreach(liveness_get_live_out_at(((liveness_analysis*) &self->liveness), i)){
-      live_range* range = get_live_range(self, bit_vector_current);
+      live_range* range = get_live_range(self, *((word*) it_current));
       live_range_add_interval(range, block->start_pos, block->end_pos);
     }
 
