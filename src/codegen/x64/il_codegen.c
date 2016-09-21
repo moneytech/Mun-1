@@ -19,6 +19,10 @@ constant_compile(instruction* instr, asm_buff* code){
   if(loc_is_register(locs->inputs[0])){
     printf("Loading '%s' into #%d\n", lua_to_string(to_constant(instr)->value), loc_get_register(locs->inputs[0]));
   }
+
+  if(loc_is_register(locs->output)){
+    asm_movq_ri(code, loc_get_register(locs->output), ((asm_imm) to_constant(instr)->value));
+  }
 }
 
 location_summary*
@@ -31,6 +35,7 @@ return_make_loc_summary(instruction* instr){
 void
 return_compile(instruction* instr, asm_buff* code){
   printf("Returning\n");
+  asm_ret(code);
 }
 
 location_summary*

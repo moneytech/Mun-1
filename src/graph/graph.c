@@ -6,6 +6,7 @@
 #include <mun/buffer.h>
 #include <mun/codegen/il_defs.h>
 #include <mun/codegen/il_core.h>
+#include <mun/object.h>
 
 void
 graph_init(graph* self, function* func, graph_entry_instr* entry){
@@ -24,80 +25,75 @@ minimum(word a, word b){
 
 static void
 compress_path(word start, word current, object_buffer* /* word */ parent, object_buffer* /* word */ label){
-  word next_index = *((word*) buffer_at(parent, current));
+  word next_index = (*((word*) parent->data[current]));
   if(next_index > start){
     compress_path(start, next_index, parent, label);
-    (*((word*) buffer_at(label, current))) = minimum(*((word*) buffer_at(label, current)), *((word*) buffer_at(label, next_index)));
-    (*((word*) buffer_at(parent, current))) = *((word*) buffer_at(parent, next_index));
+    (*((word*) label->data[current])) = minimum(*((word*) label->data[current]), *((word*) label->data[next_index]));
+    (*((word*) parent->data[current])) = (*((word*) parent->data[next_index]));
   }
 }
 
 static void
-compute_dominators(graph* self, object_buffer* /* bit_vector* */ dominance){
-  word size = self->parent.size;
+compute_dominators(graph* g, object_buffer* /* bit_vector* */ dominance){
+  word size = g->parent.size;
 
-  object_buffer idom;
+  object_buffer idom; // word*
   buffer_init(&idom, size);
 
-  object_buffer semi;
+  object_buffer semi; // word*
   buffer_init(&semi, size);
 
-  object_buffer label;
+  object_buffer label; // word*
   buffer_init(&label, size);
 
   for(word i = 0; i < size; i++){
-    buffer_add(&idom, buffer_at(&self->parent, i));
-    word* pi = malloc(sizeof(word));
-    word* pi2 = malloc(sizeof(word));
-    memcpy(pi, &i, sizeof(word));
-    memcpy(pi2, &i, sizeof(word));
-    buffer_add(&semi, pi);
-    buffer_add(&label, pi2);
+    buffer_add(&idom, g->parent.data[i]);
+    buffer_add(&semi, word_clone(i));
+    buffer_add(&label, word_clone(i));
 
     bit_vector* vec = malloc(sizeof(bit_vector));
     bit_vector_init(vec, size);
     buffer_add(dominance, vec);
   }
 
-  buffer_clear(&((block_entry_instr*) buffer_at(&self->preorder, 0))->dominated);
+  buffer_clear(&((block_entry_instr*) g->preorder.data[0])->dominated);
   for(word block_index = size - 1; block_index >= 1; block_index--){
-    block_entry_instr* block = buffer_at(&self->preorder, block_index);
-    buffer_clear(&block->dominated);
+    block_entry_instr* b = g->preorder.data[block_index];
+    buffer_clear(&b->dominated);
 
-    for(word i = 0; i < block_predecessor_count(block); i++){
-      block_entry_instr* predecessor = block_predecessor_at(block, i);
-
-      word pred_index = predecessor->preorder_num;
+    for(word i = 0; i < block_predecessor_count(b); i++){
+      block_entry_instr* pred = block_predecessor_at(b, i);
+      word pred_index = pred->preorder_num;
       word best = pred_index;
 
       if(pred_index > block_index){
-        compress_path(block_index, pred_index, &self->parent, &label);
-        best = *((word*) buffer_at(&label, pred_index));
+        compress_path(block_index, pred_index, &g->parent, &label);
+        best = *((word*) label.data[pred_index]);
       }
 
-      *((word*) buffer_at(&semi, block_index)) = minimum(*((word*) buffer_at(&semi, block_index)), *((word*) buffer_at(&semi, best)));
+      (*((word*) semi.data[block_index])) = minimum(*((word*) semi.data[block_index]), *((word*) semi.data[best]));
     }
 
-    *((word*) buffer_at(&label, block_index)) = *((word*) buffer_at(&semi, block_index));
+    (*((word*) label.data[block_index])) = (*((word*) semi.data[block_index]));
   }
 
   for(word block_index = 1; block_index < size; block_index++){
-    word dom_index = *((word*) buffer_at(&idom, block_index));
-    while(dom_index > *((word*) buffer_at(&semi, block_index))){
-      dom_index = *((word*) buffer_at(&idom, dom_index));
+    word dom_index = (*((word*) idom.data[block_index]));
+    while(dom_index > (*((word*) semi.data[block_index]))){
+      dom_index = (*((word*) idom.data[dom_index]));
     }
-    *((word*) buffer_at(&idom, block_index)) = dom_index;
-    block_add_dominated(((block_entry_instr*) buffer_at(&self->preorder, dom_index)), ((block_entry_instr*) buffer_at(&self->preorder, block_index)));
+    (*((word*) idom.data[block_index])) = dom_index;
+    block_add_dominated(g->preorder.data[dom_index], g->preorder.data[block_index]);
   }
 
   for(word block_index = 0; block_index < size; block_index++){
-    block_entry_instr* block = buffer_at(&self->preorder, block_index);
-    word count = block_predecessor_count(block);
+    block_entry_instr* b = g->preorder.data[block_index];
+    word count = block_predecessor_count(b);
     if(count <= 1) continue;
     for(word i = 0; i < count; i++){
-      block_entry_instr* runner = block_predecessor_at(block, i);
-      while(runner != block->dominator){
-        bit_vector_add(((bit_vector*) buffer_at(dominance, runner->preorder_num)), block_index);
+      block_entry_instr* runner = block_predecessor_at(b, i);
+      while(runner != b->dominator){
+        bit_vector_add(dominance->data[runner->preorder_num], block_index);
         runner = runner->dominator;
       }
     }
@@ -125,7 +121,7 @@ insert_phis(graph* g, object_buffer* assigned_vars, object_buffer* dominance, ob
   for(word var_index = 0; var_index < graph_variable_count(g); var_index++){
     for(word block_index = 0; block_index < block_count; block_index++){
       if(bit_vector_contains(buffer_at(assigned_vars, block_index), var_index)){
-        work.data[block_index] = word_clone(var_index);
+        *((word*) work.data[block_index]) = var_index;
         buffer_add(&worklist, buffer_at(&g->preorder, block_index));
       }
     }
@@ -139,9 +135,9 @@ insert_phis(graph* g, object_buffer* assigned_vars, object_buffer* dominance, ob
           phi_instr* phi = join_insert_phi(((join_entry_instr*) b), var_index, graph_variable_count(g));
           phi->alive = TRUE;
           buffer_add(phis, phi);
-          has_already.data[bit_vector_current] = word_clone(var_index);
+          *((word*) has_already.data[bit_vector_current]) = var_index;
           if((*((word*) work.data[bit_vector_current])) < var_index){
-            work.data[bit_vector_current] = word_clone(var_index);
+            *((word*) work.data[bit_vector_current]) = var_index;
             buffer_add(&worklist, b);
           }
         }
@@ -197,50 +193,49 @@ graph_rename_recursive(graph* g, block_entry_instr* block, object_buffer* /* def
 
   // Attach_environment?
 
-  printf("Foreach: %s\n", ((instruction*) block)->ops->name());
-
-  forward_instr_iter(block, it){
+  instruction* it = ((instruction*) block)->next;
+  while(it != NULL){
     for(word i = instr_input_count(it) - 1; i >= 0; i--){
-      il_value* val = instr_input_at(it, i);
+      il_value* v = instr_input_at(it, i);
       definition* reach = buffer_del_last(env);
-      definition* input = val->defn;
+      definition* input = v->defn;
 
       if(input != reach){
-        val->defn = reach;
+        v->defn = reach;
         input = reach;
       }
 
-      defn_add_input_use(input, val);
+      defn_add_input_use(input, v);
     }
 
     for(word j = 0; j < instr_argument_count(it); j++){
       buffer_del_last(env);
     }
 
-    printf("Renaming?: %s\n", it->ops->name());
-
     if(instr_is_definition(it)){
       definition* defn = container_of(it, definition, instr);
 
-      printf("Definition: %s\n", ((instruction*) defn)->ops->name());
-
-      if(instr_is(it, kLoadLocalTag) ||
-         instr_is(it, kStoreLocalTag) ||
+      if(instr_is(it, kStoreLocalTag) ||
+         instr_is(it, kLoadLocalTag) ||
+         instr_is(it, kDropTag) ||
          instr_is(it, kConstantTag)){
-
         definition* result = NULL;
 
         if(instr_is(it, kStoreLocalTag)){
-          word index = local_var_bit_index(to_store_local(it)->local, function_num_non_copied_params(((instance*) g->func)));
-          result = to_store_local(it)->inputs[0]->defn;
+          store_local_instr* sli = to_store_local(it);
 
-          if(var_analysis_is_store_alive(var_liveness, block, to_store_local(it))){
+          word index = local_var_bit_index(sli->local, function_num_non_copied_params(((instance*) g->func)));
+          result = sli->inputs[0]->defn;
+
+          if(var_analysis_is_store_alive(var_liveness, block, sli)){
             env->data[index] = result;
           } else{
             env->data[index] = c_null;
           }
         } else if(instr_is(it, kLoadLocalTag)){
-          word index = local_var_bit_index(to_load_local(it)->local, function_num_non_copied_params(((instance*) g->func)));
+          load_local_instr* lli = to_load_local(it);
+
+          word index = local_var_bit_index(lli->local, function_num_non_copied_params(((instance*) g->func)));
           result = env->data[index];
 
           phi_instr* phi = to_phi(((instruction*) result));
@@ -249,11 +244,11 @@ graph_rename_recursive(graph* g, block_entry_instr* block, object_buffer* /* def
             buffer_add(live_phis, phi);
           }
 
-          if(var_analysis_is_last_load(var_liveness, block, to_load_local(it))){
+          if(var_analysis_is_last_load(var_liveness, block, lli)){
             env->data[index] = c_null;
           }
         } else if(instr_is(it, kDropTag)){
-
+          //TODO: Drop
         } else{
           result = ((definition*) graph_get_constant(g, to_constant(it)->value));
         }
@@ -270,6 +265,30 @@ graph_rename_recursive(graph* g, block_entry_instr* block, object_buffer* /* def
         }
       }
     }
+
+    for(word i = 0; i < block->dominated.size; i++){
+      block_entry_instr* b = block->dominated.data[i];
+      object_buffer new_env; // definition*
+      buffer_init(&new_env, env->size);
+      buffer_add_all(&new_env, env);
+      graph_rename_recursive(g, b, &new_env, live_phis, var_liveness);
+    }
+
+    if((instr_successor_count(block->last) == 1) && instr_is(((instruction*) instr_successor_at(block->last, 0)), kJoinEntryTag)){
+      join_entry_instr* successor = to_join_entry(((instruction*) instr_successor_at(block->last, 0)));
+      word pred_index = join_index_of_predecessor(successor, block);
+      if(successor->phis != NULL){
+        for(word i = 0; i < successor->phis->size; i++){
+          phi_instr* phi = successor->phis->data[i];
+          if(phi != NULL){
+            il_value* use = value_new(env->data[i]);
+            instr_set_input_at(((instruction*) phi), pred_index, use);
+          }
+        }
+      }
+    }
+
+    it = it->next;
   }
 
   for(word i = 0; i < block->dominated.size; i++){

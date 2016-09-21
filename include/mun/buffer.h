@@ -55,8 +55,10 @@ buffer_insert_at(object_buffer* self, word idx, V value){
 
 MUN_INLINE void
 buffer_add_all(object_buffer* self, object_buffer* src){
+  if(self->data == NULL) buffer_init(self, 1);
   for(word i = 0; i < src->size; i++){
-    buffer_add(self, buffer_at(self, i));
+    printf("Adding #%li\n", i);
+    buffer_add(self, src->data[i]);
   }
 }
 
@@ -74,7 +76,7 @@ buffer_clone_into(object_buffer* self, object_buffer* other){
 
 MUN_INLINE bool
 buffer_is_empty(object_buffer* self){
-  return self->size == 0;
+  return self == NULL || self->size == 0;
 }
 
 HEADER_END

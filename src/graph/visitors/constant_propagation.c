@@ -13,8 +13,14 @@ set_value(constant_propagator* cp, definition* defn, instance* value){
   return TRUE;
 }
 
-#define get_cp(v) \
-  container_of(v, constant_propagator, vis)
+MUN_INLINE void
+set_reachable(constant_propagator* cp, block_entry_instr* block){
+  if(!bit_vector_contains(&cp->reachable, block->preorder_num)){
+    bit_vector_add(&cp->reachable, block->preorder_num);
+    buffer_add(&cp->block_worklist, block);
+  }
+}
+
 #define get_def(i) \
   container_of(i, definition, instr)
 
@@ -25,11 +31,18 @@ cp_visit_constant(graph_visitor* vis, instruction* instr){
 
 static void
 cp_visit_graph_entry(graph_visitor* vis, instruction* instr){
-  object_buffer defs; // definition*
-  buffer_clone_into(&defs, &to_graph_entry(instr)->initial_definitions);
-  for(word i = 0; i < defs.size; i++){
-    ((instruction*) defs.data[i])->ops->accept(defs.data[i], vis);
+  for(word i = 0; i < to_graph_entry(instr)->initial_definitions.size; i++){
+    ((instruction*) to_graph_entry(instr)->initial_definitions.data[i])->ops->accept(to_graph_entry(instr)->initial_definitions.data[i], vis);
   }
+
+  for(word i = 0; i < instr_successor_count(instr); i++){
+    set_reachable(get_cp(vis), instr_successor_at(instr, i));
+  }
+}
+
+static void
+cp_visit_return(graph_visitor* vis, instruction* instr){
+  // Fallthrough
 }
 
 static void
@@ -45,9 +58,13 @@ cp_visit_target_entry(graph_visitor* vis, instruction* instr){
 void
 cp_init(constant_propagator* cp, graph* g){
   cp->flow_graph = g;
+  bit_vector_init(&cp->reachable, g->preorder.size);
   buffer_init(&cp->block_worklist, 1);
   def_worklist_init(&cp->worklist, g, 10);
   VISITOR.visit_constant = &cp_visit_constant;
+  VISITOR.visit_graph_entry = &cp_visit_graph_entry;
+  VISITOR.visit_target_entry = &cp_visit_target_entry;
+  VISITOR.visit_return = &cp_visit_return;
 }
 
 void

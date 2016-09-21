@@ -71,18 +71,15 @@ struct _instruction{
 
   representation rep;
 
-  uword flags;
+  bool is_def: 1;
+  instruction_tag tag;
+
   word lifetime_pos;
 
-  const instruction_ops* ops;
+  instruction_ops* ops;
 
   location_summary* locations;
 };
-
-static const uword kInvalidFlags = 0x0;
-
-bool instr_is_definition(instruction* instr);
-bool instr_is(instruction* instr, instruction_tag tag);
 
 void instr_set_input_at(instruction* instr, word index, il_value* val);
 void instr_insert_after(instruction* instr, instruction* prev);
@@ -128,6 +125,16 @@ MUN_INLINE void
 instr_initialize_location_summary(instruction* instr){
   printf("Initializing Location Summary For: '%s'\n", instr->ops->name());
   instr->locations = instr->ops->make_location_summary(instr);
+}
+
+MUN_INLINE bool
+instr_is_definition(instruction* instr){
+  return instr->is_def;
+}
+
+MUN_INLINE bool
+instr_is(instruction* instr, instruction_tag tag){
+  return instr->tag == tag;
 }
 
 il_value* instr_input_at(instruction* instr, word index);

@@ -1,5 +1,16 @@
 #include <mun/buffer.h>
 #include <mun/codegen/intermediate_language.h>
+#include <mun/graph/graph_visitor.h>
+
+static word
+block_entry_input_count(instruction* instr){
+  return 0;
+}
+
+void
+block_entry_init(block_entry_instr* block){
+  block->instr.ops->input_count = &block_entry_input_count;
+}
 
 static char*
 graph_name() {
@@ -37,6 +48,11 @@ graph_successor_at(instruction* instr, word index){
   return NULL;
 }
 
+static void
+graph_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_graph_entry(vis, instr);
+}
+
 graph_entry_instr*
 graph_entry_new(function* func, target_entry_instr* target) {
   graph_entry_instr* g = malloc(sizeof(graph_entry_instr));
@@ -52,13 +68,15 @@ graph_entry_new(function* func, target_entry_instr* target) {
       NULL, // get_block
       NULL, // input_at
       &graph_name, // name
+      &graph_accept, // accept
   };
   instr_init(((instruction*) g), kGraphEntryTag, &ops);
-  defn_init(((definition*) g));
+  block_entry_init(((block_entry_instr*) g));
   g->block.clear_predecessors = &graph_clear_predecessors;
   g->block.add_predecessor = &graph_add_predecessor;
   g->block.predecessor_count = &graph_predecessor_count;
   g->block.predecessor_at = &graph_predecessor_at;
+  g->block.last = NULL;
   g->func = func;
   g->normal_entry = target;
   g->entry_count = 0;
@@ -95,6 +113,11 @@ target_clear_predecessors(block_entry_instr* self){
   block_to_target(self)->predecessor = NULL;
 }
 
+static void
+target_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_target_entry(vis, instr);
+}
+
 target_entry_instr*
 target_entry_new() {
   target_entry_instr* t = malloc(sizeof(target_entry_instr));
@@ -110,9 +133,10 @@ target_entry_new() {
       NULL, // get_block
       NULL, // input_at
       &target_name, // name
+      &target_accept, // accept
   };
   instr_init(((instruction*) t), kTargetEntryTag, &ops);
-  defn_init(((definition*) t));
+  block_entry_init(((block_entry_instr*) t));
   t->block.clear_predecessors = &target_clear_predecessors;
   t->block.add_predecessor = &target_add_predecessor;
   t->block.predecessor_at = &target_predecessor_at;
@@ -176,7 +200,7 @@ join_entry_new() {
       &join_name,
   };
   instr_init(((instruction*) join), kJoinEntryTag, &ops);
-  defn_init(((definition*) join));
+  block_entry_init(((block_entry_instr*) join));
   join->block.clear_predecessors = &join_clear_predecessors;
   join->block.add_predecessor = &join_add_predecessor;
   join->block.predecessor_count = &join_predecessor_count;
@@ -223,9 +247,8 @@ block_discover_blocks(block_entry_instr* self, block_entry_instr* predecessor, o
   word parent_num = (predecessor == NULL) ?
                     -1 :
                     predecessor->preorder_num;
-
   buffer_add(parent, word_clone(parent_num));
-  self->preorder_num = parent->size;
+  self->preorder_num = preorder->size;
   buffer_add(preorder, self);
 
   instruction* last = ((instruction*) self);
@@ -234,5 +257,6 @@ block_discover_blocks(block_entry_instr* self, block_entry_instr* predecessor, o
   }
 
   self->last = last;
+  if(instr_is(last, kGotoTag)) to_goto(last)->block = self;
   return TRUE;
 }

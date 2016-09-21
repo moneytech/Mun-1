@@ -2,26 +2,6 @@
 #include <mun/bitfield.h>
 #include <mun/graph/graph.h>
 
-static const bit_field kTagField = {
-    0,
-    sizeof(instruction_tag)
-};
-
-static const bit_field kDefField = {
-    sizeof(instruction_tag),
-    1
-};
-
-bool
-instr_is_definition(instruction* instr){
-  return bit_field_decode(&kDefField, instr->flags) == TRUE;
-}
-
-bool
-instr_is(instruction* instr, instruction_tag tag){
-  return bit_field_decode(&kTagField, instr->flags) == tag;
-}
-
 void
 instr_insert_after(instruction* instr, instruction* prev){
   instr->prev = prev;
@@ -69,7 +49,8 @@ instr_init(instruction* instr, instruction_tag tag, instruction_ops* ops){
   instr->prev = NULL;
   instr->rep = kTagged;
   instr->ops = ops;
-  instr->flags = ((uword) bit_field_encode(&kTagField, tag) | bit_field_encode(&kDefField, FALSE));
+  instr->is_def = FALSE;
+  instr->tag = tag;
   if(ops->successor_count == NULL) ops->successor_count = &instr_successor_count_;
 }
 
@@ -104,8 +85,7 @@ defn_init(definition* defn){
   defn->constant_value = NULL;
   defn->ssa_temp_index = -1;
   defn->temp_index = -1;
-  instruction_tag tag = ((instruction_tag) bit_field_decode(&kTagField, ((instruction*) defn)->flags));
-  ((instruction*) defn)->flags = ((uword) bit_field_encode(&kDefField, TRUE) | bit_field_encode(&kTagField, tag));
+  ((instruction*) defn)->is_def = TRUE;
 }
 
 bool
@@ -116,7 +96,6 @@ defn_has_input_use(definition* defn, il_value* val){
 void
 instr_compile(instruction* instr, asm_buff* code){
   if(instr->ops->emit_machine_code != NULL) {
-    printf("Emitting machine code for %s\n", instr->ops->name());
     instr->ops->emit_machine_code(instr, code);
   }
 }

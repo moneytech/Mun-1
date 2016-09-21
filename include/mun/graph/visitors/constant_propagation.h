@@ -51,11 +51,14 @@ typedef struct{
   graph* flow_graph;
   object_buffer block_worklist; // block_entry_instr*
   definition_worklist worklist;
+  bit_vector reachable;
 } constant_propagator;
 
 void cp_init(constant_propagator* cp, graph* g);
 void cp_analyze(constant_propagator* cp);
 void cp_transform(constant_propagator* cp);
+
+#define get_cp(gvis) container_of(gvis, constant_propagator, vis)
 
 HEADER_END
 

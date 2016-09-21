@@ -23,6 +23,13 @@ reaching_defs_init(reaching_defs* defs, graph* g){
   buffer_init(&defs->phis, 10);
 }
 
+MUN_INLINE bit_vector*
+reaching_defs_get(reaching_defs* defs, phi_instr* phi){
+  if(phi->reaching == NULL){
+
+  }
+}
+
 typedef struct{
   word num_of_regs;
   word spill_count;

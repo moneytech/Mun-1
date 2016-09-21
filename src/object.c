@@ -54,7 +54,12 @@ lua_to_string(instance* inst){
     case kStringTag: return "<error>";
     case kTableTag: return "<table>";
     case kIllegalTag: return "<error>";
-    default: return "<uh...?>";
+    default: {
+      char* buffer = malloc(11);
+      snprintf(buffer, 10, "%d", inst->type_id);
+      buffer[11] = '\0';
+      return buffer;
+    }
   }
 }
 
@@ -77,7 +82,7 @@ function_new(char* name, int mods){
   NEW_TYPE(function, kFunctionTag, f);
   f->name = strdup(name);
   f->mods = mods;
-  f->code = NULL;
+  f->code = 0;
   f->scope = local_scope_new(NULL);
   f->def.num_params = 0;
   f->def.first_param_index = 0;
@@ -129,5 +134,4 @@ function_allocate_variables(instance* func){
   f->def.num_copied_params = 0;
   int next_free_frame_index = local_scope_alloc_vars(scope, ((int) f->def.first_param_index), ((int) f->def.num_params), ((int) f->def.first_stack_local_index));
   f->def.num_stack_locals = f->def.first_stack_local_index - next_free_frame_index;
-  printf("%li - %d\n", f->def.first_stack_local_index, next_free_frame_index);
 }

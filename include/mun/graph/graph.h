@@ -34,7 +34,6 @@ graph_alloc_ssa_temp(graph* g){
 MUN_INLINE void
 graph_alloc_ssa_index(graph* g, definition* defn){
   defn->ssa_temp_index = graph_alloc_ssa_temp(g);
-  printf("SSA Index: %s => $%li\n", ((instruction*) defn)->ops->name(), defn->ssa_temp_index);
   graph_alloc_ssa_temp(g);
 }
 
@@ -49,7 +48,6 @@ graph_get_constant(graph* g, instance* val){
   constant_instr* c = constant_new(val);
   c->defn.ssa_temp_index = graph_alloc_ssa_temp(g);
   graph_add_to_initial_definitions(g, ((definition*) c));
-  printf("Getting Constant For: %s\n", lua_to_string(val));
   return c;
 }
 

@@ -1,4 +1,6 @@
 #include <mun/graph/graph_builder.h>
+#include <mun/codegen/il_core.h>
+#include <mun/ast.h>
 
 static instruction*
 append_fragment(block_entry_instr* entry, effect_visitor vis){
@@ -11,7 +13,6 @@ il_value*
 evis_bind(effect_visitor* self, definition* defn){
   graph_builder_dealloc_temps(self->owner, instr_input_count(((instruction*) defn)));
   defn->temp_index = graph_builder_alloc_temp(self->owner);
-  printf("%s -> $%li\n", ((instruction*) defn)->ops->name(), defn->temp_index);
   if(evis_is_empty(self)){
     self->entry = ((instruction*) defn);
   } else{
@@ -34,10 +35,12 @@ evis_do(effect_visitor* self, definition* defn){
 
 void
 evis_add_instruction(effect_visitor* self, instruction* instr){
+  printf("Adding Instruction: %s, %s\n", instr->ops->name(), evis_is_empty(self) ? "true" : "false");
   graph_builder_dealloc_temps(self->owner, instr_input_count(instr));
   if(evis_is_empty(self)){
     self->entry = self->exit = instr;
   } else{
+    printf("Exit: %s\n", self->exit->ops->name());
     instr_link_to(self->exit, instr);
     self->exit = instr;
   }
@@ -73,6 +76,7 @@ evis_return_value(ast_node_visitor* vis, il_value* val){
 
 static void
 evis_return_definition(ast_node_visitor* vis, definition* defn){
+  printf("EVIS ReturnDefinition\n");
   if(!instr_is(((instruction*) defn), kConstantTag)){
     evis_do(get_evis(vis), defn);
   }
@@ -81,7 +85,7 @@ evis_return_definition(ast_node_visitor* vis, definition* defn){
 static void
 evis_visit_literal(ast_node_visitor* vis, ast_node* node){
   definition* defn = ((definition*) constant_new(to_literal_node(node)->value));
-  vis_return_definition(vis, defn);
+  get_evis(vis)->return_definition(vis, defn);
 }
 
 static void
@@ -90,12 +94,10 @@ evis_visit_sequence(ast_node_visitor* vis, ast_node* node){
 
   word i = 0;
   while(evis_is_open(get_evis(vis)) && (i < seq->size)){
-    effect_visitor for_effect;
-    evis_init(&for_effect, get_evis(vis)->owner);
-
-    visit_ast(((ast_node_visitor*) &for_effect), seq->nodes[i]);
-    evis_append(get_evis(vis), for_effect);
-    i++;
+    effect_visitor evis;
+    evis_init(&evis, get_evis(vis)->owner);
+    visit_ast(((ast_node_visitor*) &evis), seq->nodes[i++]);
+    evis_append(get_evis(vis), evis);
     if(!evis_is_open(get_evis(vis))){
       break;
     }
@@ -106,7 +108,9 @@ static void
 evis_visit_return(ast_node_visitor* vis, ast_node* node){
   value_visitor for_value;
   vvis_init(&for_value, get_evis(vis)->owner);
+
   visit_ast(((ast_node_visitor*) &for_value), to_return_node(node)->value);
+
   evis_append(get_evis(vis), for_value.effect);
   evis_add_return_exit(get_evis(vis), for_value.value);
 }
@@ -177,7 +181,7 @@ vvis_visit_load_local(ast_node_visitor* vis, ast_node* node){
   } else{
     load = ((definition*) load_local_new(lln->local));
   }
-  vis_return_definition(vis, load);
+  get_vvis(vis)->effect.return_definition(vis, load);
 }
 
 void

@@ -71,8 +71,9 @@ alloc_finger_initialize(alloc_finger* self, live_range* range){
 void
 live_range_define(live_range* self, word pos){
   if(self->first_use_interval == NULL){
-    self->first_use_interval = self->last_use_interval = malloc(sizeof(use_interval));
-    use_interval_init(self->first_use_interval, pos, pos + 1, NULL);
+    use_interval* interval = malloc(sizeof(use_interval));
+    use_interval_init(interval, pos, pos + 1, NULL);
+    self->last_use_interval = self->first_use_interval = interval;
   } else{
     self->first_use_interval->start = pos;
   }
@@ -104,9 +105,9 @@ live_range_add_use(live_range* self, word pos, location* slot){
     }
   }
 
-  self->uses = malloc(sizeof(use_position));
-  use_pos_init(self->uses, pos, self->uses, slot);
-  return self->uses;
+  use_position* next = malloc(sizeof(use_position));
+  use_pos_init(next, pos, self->uses, slot);
+  return (self->uses = next);
 }
 
 void
@@ -190,29 +191,27 @@ live_range_split(live_range* self, word pos){
     last_before = interval;
   }
 
-  use_position* first_after_split = split_lists(&self->uses, pos, split_at_start);
+  use_position* first_use_after = split_lists(&self->uses, pos, split_at_start);
   use_interval* last_use_interval = (last_before == self->last_use_interval) ?
-                                    first_after :
-                                    self->last_use_interval;
+                                    first_after : self->last_use_interval;
 
   live_range* new_sibling = malloc(sizeof(live_range));
-  new_sibling->rep = self->rep;
   new_sibling->vreg = self->vreg;
-  new_sibling->uses = first_after_split;
+  new_sibling->assigned = kInvalid;
+  new_sibling->uses = first_use_after;
   new_sibling->first_use_interval = first_after;
   new_sibling->last_use_interval = last_use_interval;
   new_sibling->next_sibling = self->next_sibling;
-  new_sibling->assigned = kInvalidLocation;
-  alloc_finger_init(&new_sibling->finger);
 
   self->next_sibling = new_sibling;
   self->last_use_interval = last_before;
-  self->last_use_interval = NULL;
+  self->last_use_interval->next = NULL;
 
-  if(first_after_split != NULL){
-    alloc_finger_update(&self->finger, first_after_split->pos);
+  if(first_use_after != NULL){
+    alloc_finger_update(&self->finger, first_use_after->pos);
   }
-  return self->next_sibling;
+
+  return new_sibling;
 }
 
 bool

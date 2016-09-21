@@ -37,6 +37,8 @@ typedef struct _block_entry_instr{
   parallel_move_instr* parallel_move;
 } block_entry_instr;
 
+void block_entry_init(block_entry_instr* block);
+
 MUN_INLINE word
 block_predecessor_count(block_entry_instr* block){
   return block->predecessor_count(block);

@@ -1,5 +1,6 @@
 #include <mun/buffer.h>
 #include <mun/codegen/intermediate_language.h>
+#include <mun/graph/graph_visitor.h>
 
 static word
 return_input_count(instruction* instr){
@@ -22,6 +23,11 @@ return_name(){
   return "Return";
 }
 
+static void
+return_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_return(vis, instr);
+}
+
 return_instr*
 return_new(il_value* val){
   return_instr* ret = malloc(sizeof(return_instr));
@@ -37,6 +43,7 @@ return_new(il_value* val){
       NULL, // get_block
       &return_input_at, // input_at
       &return_name, // name
+      &return_accept, // accept
   };
   instr_init(&ret->defn.instr, kReturnTag, &ops);
   defn_init(&ret->defn);
@@ -64,6 +71,11 @@ constant_name(){
   return "Constant";
 }
 
+static void
+constant_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_constant(vis, instr);
+}
+
 constant_instr*
 constant_new(instance* val){
   constant_instr* c = malloc(sizeof(constant_instr));
@@ -78,7 +90,8 @@ constant_new(instance* val){
       NULL, // successor_at
       NULL, // get_block
       &constant_input_at, // input_at
-      &constant_name // name
+      &constant_name, // name
+      &constant_accept, // accept
   };
   instr_init(&c->defn.instr, kConstantTag, &ops);
   defn_init(&c->defn);

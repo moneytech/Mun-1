@@ -1,9 +1,4 @@
 #include <mun/codegen/ra_allocator.h>
-#include <mun/buffer.h>
-#include <mun/graph/graph.h>
-#include <mun/codegen/il_core.h>
-#include <mun/codegen/il_value.h>
-#include <mun/codegen/il_entries.h>
 #include <assert.h>
 
 void
@@ -18,7 +13,6 @@ graph_alloc_init(graph_allocator* self, graph* g){
   buffer_init(&self->unallocated, 10);
   buffer_init(&self->registers, 10);
   self->vreg_count = g->current_ssa_temp_index;
-  printf("VRegs: %li\n", self->vreg_count);
   buffer_init(&self->live_ranges, self->vreg_count);
   buffer_clone_into(&self->block_order, &g->reverse_postorder);
   self->num_of_regs = 0;
@@ -26,11 +20,11 @@ graph_alloc_init(graph_allocator* self, graph* g){
   reaching_defs_init(&self->reaching, g);
 
   for(word i = 0; i < self->vreg_count; i++){
-    printf("Adding NULL: %li\n", i);
     buffer_add(&self->live_ranges, NULL);
   }
 
   for(word i = 0; i < kNumberOfCpuRegisters; i++){
+    self->cpu_regs[i] = NULL;
     if((kAvailableCpuRegistersList & (1 << i)) == 0){
       self->blocked_cpu_regs[i] = TRUE;
     } else{
@@ -48,7 +42,7 @@ static void alloc_unallocated_ranges(graph_allocator* self);
 static void resolve_control_flow(graph_allocator* self);
 
 void
-graph_alloc_regs(graph_allocator* self){
+ graph_alloc_regs(graph_allocator* self){
   liveness_analyze(((liveness_analysis*) &self->liveness));
   number_instructions(self);
   build_live_ranges(self);
@@ -59,8 +53,10 @@ graph_alloc_regs(graph_allocator* self){
   self->spill_count = self->spilled.size;
   buffer_clear(&self->spilled);
 
+  /*
   prep_allocation(self, kFpuRegister, kNumberOfFpuRegisters, &self->unallocated_fpu, self->fpu_regs, self->blocked_fpu_regs);
   alloc_unallocated_ranges(self);
+   */
 
   resolve_control_flow(self);
 }
@@ -88,7 +84,6 @@ number_instructions(graph_allocator* self){
         buffer_add(&self->instructions, it);
         buffer_add(&self->instructions, info);
         it->lifetime_pos = pos;
-        printf("%s => %li\n", it->ops->name(), pos);
         pos += 2;
       }
     }
@@ -127,9 +122,7 @@ block_info_at(graph_allocator* self, word pos){
 MUN_INLINE live_range*
 get_live_range(graph_allocator* self, word vreg){
   assert(vreg != -1);
-  printf("Getting Live Range: %li\n", vreg);
   if(self->live_ranges.data[vreg] == NULL){
-    printf("\tCreated #%li\n", vreg);
     live_range* range = malloc(sizeof(live_range));
     live_range_init(range, vreg, kTagged);
 
@@ -172,7 +165,7 @@ connect_outgoing_phi_moves(graph_allocator* self, block_entry_instr* block, bit_
     if(interference != NULL) bit_vector_add(interference, vreg);
     live_range_add_interval(range, block->start_pos, pos);
     live_range_add_hinted(range, pos, &m->src, &get_live_range(self, phis_current->defn.ssa_temp_index)->assigned);
-    loc_hint_rr(&m->src);
+    loc_hint_pr(&m->src);
   }
 
   return ((instruction*) go)->prev;
@@ -226,6 +219,12 @@ add_to_sorted_list(object_buffer* /* live_range* */ ranges, live_range* range){
   buffer_insert_at(ranges, 0, range);
 }
 
+MUN_INLINE void
+add_to_unallocated(graph_allocator* self, live_range* range){
+  printf("Adding [%li..%li] To Unallocated\n", live_range_start(range), live_range_end(range));
+  add_to_sorted_list(&self->unallocated, range);
+}
+
 static void
 complete_range(graph_allocator* self, live_range* range, location_kind kind){
   switch(kind){
@@ -256,12 +255,12 @@ convert_all_uses(live_range* range){
 
 static void
 process_initial_definition(graph_allocator* self, definition* defn, live_range* range, block_entry_instr* block){
-  printf("Processing Initial Definition: '%s\n", ((instruction*) defn)->ops->name());
+  word range_end = live_range_end(range);
 
   if(instr_is(((instruction*) defn), kParameterTag)){
 
   } else{
-    constant_instr* c = to_constant((instruction*) defn);
+    constant_instr* c = to_constant(((instruction*) defn));
     loc_init_c(&range->assigned, c);
     loc_init_c(&range->spill, c);
   }
@@ -308,12 +307,13 @@ static parallel_move_instr*
 create_move_before(instruction* instr, word pos){
   instruction* prev = instr->prev;
   parallel_move_instr* move = to_parallel_move(instr);
-  if((!instr_is(instr, kParallelMoveTag)) || (instr->lifetime_pos != pos)){
+  if(!instr_is(instr, kParallelMoveTag) || (instr->lifetime_pos != pos)){
     move = parallel_move_new();
     instr_link_to(prev, ((instruction*) move));
     instr_link_to(((instruction*) move), instr);
     ((instruction*) move)->lifetime_pos = pos;
   }
+
   return move;
 }
 
@@ -364,10 +364,8 @@ block_register_location(graph_allocator* self, location loc, word from, word to,
 static void
 block_location(graph_allocator* self, location loc, word from, word to){
   if(loc_is_register(loc)){
-    printf("Blocking (CPU) %li -> %li #%d\n", from, to, loc_get_register(loc));
     block_register_location(self, loc, from, to, self->blocked_cpu_regs, self->cpu_regs);
   } else if(loc_is_fpu_register(loc)){
-    printf("Blocking (FPU) %li -> %li #%d\n", from, to, loc_get_fpu_register(loc));
     block_register_location(self, loc, from, to, self->blocked_fpu_regs, self->fpu_regs);
   } else{
     fprintf(stderr, "Unreachable\n");
@@ -378,14 +376,12 @@ block_location(graph_allocator* self, location loc, word from, word to){
 static void
 process_one_input(graph_allocator* self, block_entry_instr* block, word pos, location* in_ref, il_value* input, word vreg){
   live_range* range = get_live_range(self, vreg);
-  printf("Processing Input: @%li\n", pos);
   if(loc_get_kind(*in_ref) == kRegister || loc_get_kind(*in_ref) == kFpuRegister){
     location any;
     loc_init_a(&any);
 
     move_operands* move = add_move_at(self, pos - 1, *in_ref, any);
     block_location(self, *in_ref, pos - 1, pos + 1);
-
     live_range_add_interval(range, block->start_pos, pos - 1);
     live_range_add_hinted(range, pos - 1, &move->src, in_ref);
   } else if(loc_is_unallocated(*in_ref)){
@@ -396,22 +392,26 @@ process_one_input(graph_allocator* self, block_entry_instr* block, word pos, loc
   }
 }
 
+MUN_INLINE live_range*
+make_live_range_for_temp(){
+  live_range* range = malloc(sizeof(live_range));
+  live_range_init(range, -2, kTagged);
+  return range;
+}
+
 static void
 process_one_output(graph_allocator* self, block_entry_instr* block, word pos, location* out, instruction* def, word vreg, bool same, location* in_ref, instruction* input, word input_vreg, bit_vector* interference){
-  printf("Processing output: @%li\n", pos);
-
   live_range* range = vreg >= 0 ?
                       get_live_range(self, vreg) :
-                      malloc(sizeof(live_range));
-  if(vreg >= 0) live_range_init(range, -2, kTagged);
-
+                      make_live_range_for_temp();
   if(loc_is_register(*out) || loc_is_fpu_register(*out)){
     block_location(self, *out, pos, pos + 1);
     if(range->vreg == -2) return;
     use_position* use = range->uses;
     if(use == NULL) return;
+
     if(use->pos == (pos + 1)){
-      *(use->slot) = *out;
+      *use->slot = *out;
       range->uses = range->uses->next;
     }
 
@@ -420,6 +420,7 @@ process_one_output(graph_allocator* self, block_entry_instr* block, word pos, lo
 
     location any;
     loc_init_a(&any);
+
     move_operands* move = add_move_at(self, pos + 1, any, *out);
     live_range_add_hinted(range, pos + 1, &move->dest, out);
   } else if(same){
@@ -430,6 +431,7 @@ process_one_output(graph_allocator* self, block_entry_instr* block, word pos, lo
 
     location any;
     loc_init_a(&any);
+
     move_operands* move = add_move_at(self, pos, rr, any);
     live_range* input_range = get_live_range(self, input_vreg);
     live_range_add_interval(input_range, block->start_pos, pos);
@@ -441,8 +443,8 @@ process_one_output(graph_allocator* self, block_entry_instr* block, word pos, lo
     live_range_add_use(range, pos, in_ref);
 
     if((interference != NULL) &&
-       range->vreg >= 0 &&
-       bit_vector_contains(interference, range->vreg)){
+          (range->vreg >= 0) &&
+          (bit_vector_contains(interference, range->vreg))){
       bit_vector_add(interference, container_of(input, definition, instr)->ssa_temp_index);
     }
   } else{
@@ -454,17 +456,15 @@ process_one_output(graph_allocator* self, block_entry_instr* block, word pos, lo
 }
 
 static void
-process_one_instruction(graph_allocator* self, block_entry_instr* block, instruction* instr, bit_vector* interference){
+process_one_instruction(graph_allocator* self, block_entry_instr* block, instruction* instr, bit_vector* interference) {
   location_summary* locs = instr->locations;
 
-  if(instr_is_definition(instr) &&
-     instr_is(instr, kConstantTag)){
-
+  if(instr->is_def && instr_is(instr, kConstantTag)){
     definition* defn = container_of(instr, definition, instr);
-    live_range* range = (defn->ssa_temp_index != -1) ?
+
+    live_range* range = defn->ssa_temp_index != -1 ?
                         get_live_range(self, defn->ssa_temp_index) :
                         NULL;
-
     if((range == NULL) || (range->uses == NULL)){
       locs->output = kInvalidLocation;
       return;
@@ -483,10 +483,9 @@ process_one_instruction(graph_allocator* self, block_entry_instr* block, instruc
 
   word pos = instr->lifetime_pos;
 
-  if(loc_is_unallocated(locs->output) &&
-        (loc_get_policy(locs->output) == kSameAsFirstInput)){
-    if(loc_get_kind(locs->inputs[0]) == kRegister ||
-       loc_get_kind(locs->inputs[0])){
+  if(loc_is_invalid(locs->output) &&
+     loc_get_policy(locs->output) == kSameAsFirstInput){
+    if(loc_is_register(locs->output) || loc_is_fpu_register(locs->output)){
       locs->output = locs->inputs[0];
     }
   }
@@ -494,24 +493,22 @@ process_one_instruction(graph_allocator* self, block_entry_instr* block, instruc
   bool same_as_first = loc_is_unallocated(locs->output) &&
                        loc_get_policy(locs->output) == kSameAsFirstInput;
 
-  printf("Processing %li Inputs For @%li\n", (locs->inputs_len - (same_as_first ? 1 : 0)), pos);
-
-  for(word j = same_as_first ? 1 : 0; j < locs->inputs_len; j++){
+  for(word j = (same_as_first ? 1 : 0); j < locs->inputs_len; j++){
     il_value* input = instr_input_at(instr, j);
     location* in_ref = &locs->inputs[j];
+
     process_one_input(self, block, pos, in_ref, input, input->defn->ssa_temp_index);
   }
 
   for(word j = 0; j < locs->temps_len; j++){
     location temp = locs->temps[j];
 
-    if(loc_get_kind(temp) == kRegister || loc_get_kind(temp) == kFpuRegister){
+    if(loc_is_register(temp) || loc_is_fpu_register(temp)){
       block_location(self, temp, pos, pos + 1);
     } else if(loc_is_unallocated(temp)){
-      live_range* range = malloc(sizeof(live_range));
-      live_range_init(range, -2, kTagged);
+      live_range* range = make_live_range_for_temp();
       live_range_add_interval(range, pos, pos + 1);
-      live_range_add_use(range, pos, &locs->temps[j]);
+      live_range_add_use(range, pos, &locs->temps[0]);
       complete_range(self, range, kRegister);
     } else{
       fprintf(stderr, "Unreachable\n");
@@ -521,25 +518,26 @@ process_one_instruction(graph_allocator* self, block_entry_instr* block, instruc
 
   if(locs->contains_call){
     for(word reg = 0; reg < kNumberOfCpuRegisters; reg++){
-      location reg_loc;
-      loc_init_r(&reg_loc, ((asm_register) reg));
-      block_location(self, reg_loc, pos, pos + 1);
+      location call_reg;
+      loc_init_r(&call_reg, ((asm_register) reg));
+
+      block_location(self, call_reg, pos, pos + 1);
     }
   }
 
-  if(!instr_is_definition(instr) || loc_is_invalid(locs->output)){
+  if(instr->is_def || loc_is_invalid(locs->output)){
     return;
   }
 
-  location* out_slot = &locs->output;
-
   definition* defn = container_of(instr, definition, instr);
+
+  location* out = &locs->output;
   if(same_as_first){
     location* in_ref = &locs->inputs[0];
     definition* input = instr_input_at(instr, 0)->defn;
-    process_one_output(self, block, pos, out_slot, ((instruction*) defn), defn->ssa_temp_index, TRUE, in_ref, ((instruction*) input), input->ssa_temp_index, interference);
+    process_one_output(self, block, pos, out, ((instruction*) defn), defn->ssa_temp_index, TRUE, in_ref, ((instruction*) input), input->ssa_temp_index, interference);
   } else{
-    process_one_output(self, block, pos, out_slot, ((instruction*) defn), defn->ssa_temp_index, FALSE, NULL, NULL, -1, interference);
+    process_one_output(self, block, pos, out, ((instruction*) defn), defn->ssa_temp_index, FALSE, NULL, NULL, -1, interference);
   }
 }
 
@@ -559,7 +557,7 @@ connect_incoming_phi_moves(graph_allocator* self, join_entry_instr* join){
       block_entry_instr* pred = block_predecessor_at(((block_entry_instr*) join), pred_idx);
       goto_instr* go = to_goto(pred->last);
       move_operands* move = go->parallel_move->moves.data[move_idx];
-      loc_hint_rr(&move->dest);
+      loc_hint_pr(&move->dest);
       live_range_add_use(range, pos, &move->dest);
     }
 
@@ -592,7 +590,6 @@ build_live_ranges(graph_allocator* self){
 
     instruction* current = connect_outgoing_phi_moves(self, block, interference);
     while(current != ((instruction*) block)){
-      printf("Current: '%s'\n", current->ops->name());
       if(!instr_is(current, kParallelMoveTag)){
         process_one_instruction(self, block, current, interference);
       }
@@ -631,7 +628,11 @@ prep_allocation(graph_allocator* self, location_kind kind, word num_regs, object
     buffer_add(&self->registers, register_ranges);
   }
 
+  printf("Adding %li/%li to Unallocated\n", self->unallocated.size, unallocated->size);
+
   buffer_add_all(&self->unallocated, unallocated);
+
+  printf("%li/%li\n", self->unallocated.size, self->unallocated.asize);
 
   for(word reg = 0; reg < self->num_of_regs; reg++){
     self->blocked_registers.data[reg] = bool_clone(blocked_registers[reg]);
@@ -660,6 +661,8 @@ advance_active_intervals(graph_allocator* self, word start){
   for(word reg = 0; reg < self->num_of_regs; reg++){
     if(buffer_is_empty(self->registers.data[reg])) continue;
 
+    printf("Internals: %li\n", ((object_buffer*) self->registers.data[reg])->size);
+
     word first_evicted = -1;
     for(word i = ((object_buffer*) self->registers.data[reg])->size - 1; i >= 0; i--){
       live_range* range = ((object_buffer*) self->registers.data[reg])->data[i];
@@ -674,15 +677,317 @@ advance_active_intervals(graph_allocator* self, word start){
   }
 }
 
+MUN_INLINE location
+make_register_loc(graph_allocator* self, word reg){
+  location loc;
+  if(self->kind == kRegister){
+    loc_init_r(&loc, ((asm_register) reg));
+  } else if(self->kind == kFpuRegister){
+    loc_init_x(&loc, ((asm_fpu_register) reg));
+  } else{
+    fprintf(stderr, "Unreachable\n");
+    abort();
+  }
+  return loc;
+}
+
+static word
+first_intersection(use_interval* a, use_interval* b){
+  while(a != NULL && b != NULL){
+    word pos = use_interval_intersect(a, b);
+    if(pos != 0x7FFFFFFF) return pos;
+    if(a->start < b->start){
+      a = a->next;
+    } else{
+      b = b->next;
+    }
+  }
+
+  return 0x7FFFFFFF;
+}
+
+static word
+first_intersection_with_allocated(graph_allocator* self, word reg, live_range* unallocated){
+  word intersection = 0x7FFFFFFF;
+
+  for(word i = 0; i < ((object_buffer*) self->registers.data[reg])->size; i++){
+    live_range* allocated = ((object_buffer*) self->registers.data[reg])->data[i];
+    if(allocated == NULL) continue;
+
+    use_interval* allocated_head = allocated->finger.first_pending_use;
+    if(allocated_head->start >= intersection) continue;
+
+    word pos = first_intersection(unallocated->finger.first_pending_use, allocated_head);
+    if(pos < intersection) intersection = pos;
+  }
+
+  return intersection;
+}
+
+static bool
+alloc_free_register(graph_allocator* self, live_range* unallocated){
+  word candidate = kNoRegister;
+  word free_until = 0;
+
+  location hint = alloc_finger_first_hint(&unallocated->finger);
+  if(loc_is_register(hint) || loc_is_fpu_register(hint)){
+    if(!(*((bool*) self->blocked_registers.data[loc_get_register(hint)]))){
+      free_until = first_intersection_with_allocated(self, loc_get_register(hint), unallocated);
+      candidate = loc_get_register(hint);
+    }
+  } else{
+    for(word reg = 0; reg < self->num_of_regs; reg++){
+      if(!(*((bool*) self->blocked_registers.data[reg])) && ((object_buffer*) self->registers.data[reg])->size == 0){
+        candidate = reg;
+        free_until = 0x7FFFFFFF;
+        break;
+      }
+    }
+  }
+
+  if(free_until != 0x7FFFFFFF){
+    for(word reg = 0; reg < self->num_of_regs; reg++){
+      if((*((bool*) self->blocked_registers.data[reg])) || (reg == candidate)) continue;
+
+      word intersection = first_intersection_with_allocated(self, reg, unallocated);
+
+      if(intersection > free_until){
+        candidate = reg;
+        free_until = intersection;
+        if(free_until < 0x7FFFFFFF) break;
+      }
+    }
+  }
+
+  if(free_until <= live_range_start(unallocated)) return FALSE;
+
+  if(free_until != 0x7FFFFFFF){
+    live_range* tail = live_range_split(unallocated, free_until);
+    add_to_unallocated(self, tail);
+  }
+
+  buffer_add(self->registers.data[candidate], unallocated);
+  unallocated->assigned = make_register_loc(self, candidate);
+  return TRUE;
+}
+
+static bool
+is_cheap_to_evict(graph_allocator* self, block_info* info, word reg){
+  word loop_start = info->entry->start_pos;
+  word loop_end = info->last->end_pos;
+
+  for(word i = 0; i < ((object_buffer*) self->registers.data[reg])->size; i++){
+    live_range* allocated = ((object_buffer*) self->registers.data[reg])->data[i];
+    use_interval* interval = allocated->finger.first_pending_use;
+    if(use_interval_contains(interval, loop_start)){
+      return FALSE;
+    } else if(interval->start < loop_end){
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+static bool
+has_cheap_eviction(graph_allocator* self, live_range* range){
+  block_info* header = block_info_at(self, live_range_start(range));
+  for(word reg = 0; reg < self->num_of_regs; reg++){
+    if((*((bool*) self->blocked_registers.data[reg]))) continue;
+    if(is_cheap_to_evict(self, header, reg)){
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+static void
+spill(graph_allocator* self, live_range* range){
+  live_range* parent = get_live_range(self, range->vreg);
+  if(parent->spill == kInvalidLocation){
+    // alloc_spill_slot(self, parent);
+  }
+
+  range->assigned = parent->spill;
+  convert_all_uses(range);
+}
+
+static bool
+update_free_until(graph_allocator* self, word reg, live_range* unallocated, word* curr_free, word* curr_blocked){
+  word free_until = 0x7FFFFFFF;
+  word blocked_at = 0x7FFFFFFF;
+
+  word start = live_range_start(unallocated);
+
+  for(word i = 0; i < ((object_buffer*) self->registers.data[reg])->size; i++){
+    live_range* allocated = ((object_buffer*) self->registers.data[reg])->data[i];
+
+    use_interval* first_pending_interval = allocated->finger.first_pending_use;
+    if(use_interval_contains(first_pending_interval, start)){
+      if(allocated->vreg < 0){
+        return FALSE;
+      }
+
+      use_position* use = alloc_finger_first_interfering(&allocated->finger, start);
+      if((use != NULL) && ((to_instruction_start(use->pos) - start) <= 1)){
+        return FALSE;
+      }
+
+      word use_pos = (use != NULL) ?
+                     use->pos :
+                     live_range_end(allocated);
+
+      if(use_pos < free_until) free_until = use_pos;
+    } else{
+      word intersection = first_intersection(first_pending_interval, unallocated->first_use_interval);
+      if(intersection != 0x7FFFFFFF){
+        if(intersection < free_until) free_until = intersection;
+        if(allocated->vreg == -2) blocked_at = intersection;
+      }
+    }
+  }
+
+  if(free_until <= *curr_free){
+    return FALSE;
+  }
+
+  *curr_free = free_until;
+  *curr_blocked = blocked_at;
+  return TRUE;
+}
+
+static void
+spill_between(graph_allocator* self, live_range* range, word from, word to){
+  live_range* tail = live_range_split(range, from);
+  if(live_range_start(tail) < to) {
+    live_range* tail_tail = split_between(self, tail, live_range_start(tail), to);
+    spill(self, tail);
+    add_to_unallocated(self, tail_tail);
+  } else{
+    add_to_unallocated(self, tail);
+  }
+}
+
+static void
+spill_after(graph_allocator* self, live_range* range, word from){
+  block_info* info = block_info_at(self, from);
+  if(info->is_loop || (info->loop != NULL)){
+    block_info* header = info->is_loop ?
+                         info :
+                         info->loop;
+
+    if((live_range_start(range) <= header->entry->start_pos)){
+      from = header->entry->start_pos;
+    }
+  }
+
+  live_range* tail = live_range_split(range, from);
+  spill(self, tail);
+}
+
+MUN_INLINE word
+min_pos(word a, word b){
+  return (a < b) ? a : b;
+}
+
+static bool
+evict(graph_allocator* self, live_range* allocated, live_range* unallocated){
+  use_interval* first_unallocated = unallocated->finger.first_pending_use;
+  word intersection = first_intersection(allocated->finger.first_pending_use, first_unallocated);
+  if(intersection == 0x7FFFFFFF) return FALSE;
+
+  word spill_pos = first_unallocated->start;
+
+  use_position* use = alloc_finger_first_interfering(&allocated->finger, spill_pos);
+  if(use == NULL){
+    spill_after(self, allocated, spill_pos);
+  } else{
+    word restore = (spill_pos < intersection) ?
+                   min_pos(intersection, use->pos) :
+                   use->pos;
+    spill_between(self, allocated, spill_pos, restore);
+  }
+
+  return TRUE;
+}
+
+static void
+assign_non_free_register(graph_allocator* self, live_range* unallocated, word reg){
+  word first_evicted = -1;
+
+  for(word i = ((object_buffer*) self->registers.data[reg])->size - 1; i >= 0; i--){
+    live_range* allocated = ((object_buffer*) self->registers.data[reg])->data[i];
+    if(allocated->vreg < 0) continue;
+    if(evict(self, allocated, unallocated)){
+      if(loc_is_register(allocated->assigned) || loc_is_register(allocated->assigned)){
+        convert_all_uses(allocated);
+      }
+
+      ((object_buffer*) self->registers.data[reg])->data[i] = NULL;
+      first_evicted = i;
+    }
+  }
+
+  if(first_evicted != -1) remove_evicted(self, reg, first_evicted);
+  buffer_add(self->registers.data[reg], unallocated);
+  unallocated->assigned = make_register_loc(self, reg);
+}
+
+static void
+alloc_any_register(graph_allocator* self, live_range* unallocated){
+  use_position* register_use = alloc_finger_first_register(&unallocated->finger, live_range_start(unallocated));
+  if((register_use == NULL)){
+    spill(self, unallocated);
+    return;
+  }
+
+  word candidate = 0x7FFFFFFF;
+  word free_until = 0;
+  word blocked_at = 0x7FFFFFFF;
+
+  for(word reg = 0; reg < self->num_of_regs; reg++){
+    if((*((bool*) self->registers.data[reg]))) continue;
+    if(update_free_until(self, reg, unallocated, &free_until, &blocked_at)){
+      candidate = reg;
+    }
+  }
+
+  word reg_use = (register_use != NULL) ?
+                 register_use->pos :
+                 live_range_start(unallocated);
+
+  if(free_until < reg_use){
+    spill_between(self, unallocated, live_range_start(unallocated), register_use->pos);
+    return;
+  }
+
+  if(blocked_at < live_range_end(unallocated)){
+    live_range* tail = split_between(self, unallocated, live_range_start(unallocated), blocked_at);
+    add_to_unallocated(self, tail);
+  }
+
+  assign_non_free_register(self, unallocated, candidate);
+}
+
 static void
 alloc_unallocated_ranges(graph_allocator* self){
+  printf("Unallocated CPU Ranges: %li\n", self->unallocated_cpu.size);
+  printf("Unallocated FPU Ranges: %li\n", self->unallocated_fpu.size);
+  printf("Allocating %li Unallocated Ranges\n", self->unallocated.size);
   while(!buffer_is_empty(&self->unallocated)){
     live_range* range = buffer_del_last(&self->unallocated);
+
+    printf("Unallocated Range: [%li..%li]\n", live_range_start(range), live_range_end(range));
 
     word start = live_range_start(range);
 
     advance_active_intervals(self, start);
+    if(!alloc_free_register(self, range)){
+      alloc_any_register(self, range);
+    }
   }
+
+  advance_active_intervals(self, 0x7FFFFFFF);
 }
 
 MUN_INLINE bool
@@ -692,17 +997,13 @@ target_location_is_spill_slot(live_range* range, location target){
 
 static void
 connect_split_siblings(graph_allocator* self, live_range* parent, block_entry_instr* source, block_entry_instr* target){
-  if(parent->next_sibling == NULL){
-    return;
-  }
+  if(parent->next_sibling == NULL) return;
 
-  word source_pos = source->end_pos - 1;
-  word target_pos = target->start_pos;
+  const word source_pos = source->end_pos - 1;
+  const word target_pos = target->start_pos;
 
-  location target_loc;
-  loc_init(&target_loc);
-  location source_loc;
-  loc_init(&source_loc);
+  location target_loc = kInvalidLocation;
+  location source_loc = kInvalidLocation;
 
   live_range* range = parent;
   while((range != NULL) && (loc_is_invalid(source_loc) || loc_is_invalid(target_loc))){
@@ -719,9 +1020,7 @@ connect_split_siblings(graph_allocator* self, live_range* parent, block_entry_in
 
   if(source_loc == target_loc) return;
 
-  if(target_location_is_spill_slot(parent, target_loc)){
-    return;
-  }
+  if(target_location_is_spill_slot(parent, target_loc)) return;
 
   instruction* last = source->last;
   if((instr_successor_count(last) == 1) && !instr_is(((instruction*) source), kGraphEntryTag)){
@@ -760,11 +1059,10 @@ resolve_control_flow(graph_allocator* self){
     for(word i = 1; i < self->block_order.size; i++){
       block_entry_instr* block = self->block_order.data[i];
       bit_vector* live = liveness_get_live_in(((liveness_analysis*) &self->liveness), block);
-
       bit_vector_foreach(live){
-        live_range* block_range = get_live_range(self, bit_vector_current);
+        live_range* r = get_live_range(self, *((word*) it_current));
         for(word j = 0; j < block_predecessor_count(block); j++){
-          connect_split_siblings(self, block_range, block_predecessor_at(block, j), block);
+          connect_split_siblings(self, r, block_predecessor_at(block, j), block);
         }
       }
     }
