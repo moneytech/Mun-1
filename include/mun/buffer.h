@@ -57,7 +57,6 @@ MUN_INLINE void
 buffer_add_all(object_buffer* self, object_buffer* src){
   if(self->data == NULL) buffer_init(self, 1);
   for(word i = 0; i < src->size; i++){
-    printf("Adding #%li\n", i);
     buffer_add(self, src->data[i]);
   }
 }

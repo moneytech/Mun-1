@@ -1,5 +1,8 @@
 #include <mun/codegen/ra_allocator.h>
 #include <assert.h>
+#include <mun/codegen/il_entries.h>
+#include <mun/buffer.h>
+#include <mun/codegen/il_core.h>
 
 void
 graph_alloc_init(graph_allocator* self, graph* g){
@@ -221,7 +224,6 @@ add_to_sorted_list(object_buffer* /* live_range* */ ranges, live_range* range){
 
 MUN_INLINE void
 add_to_unallocated(graph_allocator* self, live_range* range){
-  printf("Adding [%li..%li] To Unallocated\n", live_range_start(range), live_range_end(range));
   add_to_sorted_list(&self->unallocated, range);
 }
 
@@ -628,11 +630,7 @@ prep_allocation(graph_allocator* self, location_kind kind, word num_regs, object
     buffer_add(&self->registers, register_ranges);
   }
 
-  printf("Adding %li/%li to Unallocated\n", self->unallocated.size, unallocated->size);
-
   buffer_add_all(&self->unallocated, unallocated);
-
-  printf("%li/%li\n", self->unallocated.size, self->unallocated.asize);
 
   for(word reg = 0; reg < self->num_of_regs; reg++){
     self->blocked_registers.data[reg] = bool_clone(blocked_registers[reg]);
@@ -660,8 +658,6 @@ static void
 advance_active_intervals(graph_allocator* self, word start){
   for(word reg = 0; reg < self->num_of_regs; reg++){
     if(buffer_is_empty(self->registers.data[reg])) continue;
-
-    printf("Internals: %li\n", ((object_buffer*) self->registers.data[reg])->size);
 
     word first_evicted = -1;
     for(word i = ((object_buffer*) self->registers.data[reg])->size - 1; i >= 0; i--){
@@ -802,10 +798,63 @@ has_cheap_eviction(graph_allocator* self, live_range* range){
 }
 
 static void
+alloc_spill_slot(graph_allocator* self, live_range* range){
+  live_range* last_sibling = range;
+  while(last_sibling->next_sibling != NULL) last_sibling = last_sibling->next_sibling;
+
+  word start = live_range_start(range);
+  word end = live_range_end(last_sibling);
+
+  bool need_quad = FALSE; //TODO: Implement
+
+  bool need_untagged = (self->kind == kRegister);
+
+  word idx = self->kind == kRegister ?
+             self->flow_graph->graph_entry->fixed_slot_count :
+             0;
+  for(; idx < self->spill_slots.size; idx++){
+    if(need_untagged == (*((bool*) self->untagged_spill_slots.data[idx])) &&
+          (*((word*) self->spill_slots.data[idx])) <= start){
+      break;
+    }
+  }
+
+  if(idx == self->spill_slots.size){
+    buffer_add(&self->spill_slots, word_clone(0));
+    buffer_add(&self->quad_spill_slots, bool_clone(need_quad));
+    buffer_add(&self->untagged_spill_slots, bool_clone(need_untagged));
+    if(need_quad){
+      buffer_add(&self->spill_slots, word_clone(0));
+      buffer_add(&self->quad_spill_slots, bool_clone(need_quad));
+      buffer_add(&self->untagged_spill_slots, bool_clone(need_untagged));
+    }
+  }
+
+  *((word*) self->spill_slots.data[idx]) = end;
+  if(need_quad){
+    idx++;
+    *((word*) self->spill_slots.data[idx]) = end;
+  }
+
+  if(self->kind == kRegister){
+    location slot;
+    loc_init_z(&slot, idx);
+    range->spill = slot;
+  } else{
+    word slot_idx = self->cpu_spill_slot_count + idx * kDoubleSpillFactor + (kDoubleSpillFactor - 1);
+
+    location slot;
+    loc_init_d(&slot, slot_idx);
+
+    range->spill = slot;
+  }
+}
+
+static void
 spill(graph_allocator* self, live_range* range){
   live_range* parent = get_live_range(self, range->vreg);
   if(parent->spill == kInvalidLocation){
-    // alloc_spill_slot(self, parent);
+    alloc_spill_slot(self, parent);
   }
 
   range->assigned = parent->spill;
@@ -971,13 +1020,8 @@ alloc_any_register(graph_allocator* self, live_range* unallocated){
 
 static void
 alloc_unallocated_ranges(graph_allocator* self){
-  printf("Unallocated CPU Ranges: %li\n", self->unallocated_cpu.size);
-  printf("Unallocated FPU Ranges: %li\n", self->unallocated_fpu.size);
-  printf("Allocating %li Unallocated Ranges\n", self->unallocated.size);
   while(!buffer_is_empty(&self->unallocated)){
     live_range* range = buffer_del_last(&self->unallocated);
-
-    printf("Unallocated Range: [%li..%li]\n", live_range_start(range), live_range_end(range));
 
     word start = live_range_start(range);
 
@@ -992,15 +1036,15 @@ alloc_unallocated_ranges(graph_allocator* self){
 
 MUN_INLINE bool
 target_location_is_spill_slot(live_range* range, location target){
-  return loc_is_constant(target);
+  return loc_is_stack_slot(target) || loc_is_double_stack_slot(target) || loc_is_constant(target);
 }
 
 static void
 connect_split_siblings(graph_allocator* self, live_range* parent, block_entry_instr* source, block_entry_instr* target){
   if(parent->next_sibling == NULL) return;
 
-  const word source_pos = source->end_pos - 1;
-  const word target_pos = target->start_pos;
+  word source_pos = source->end_pos - 1;
+  word target_pos = target->start_pos;
 
   location target_loc = kInvalidLocation;
   location source_loc = kInvalidLocation;
@@ -1017,8 +1061,6 @@ connect_split_siblings(graph_allocator* self, live_range* parent, block_entry_in
 
     range = range->next_sibling;
   }
-
-  if(source_loc == target_loc) return;
 
   if(target_location_is_spill_slot(parent, target_loc)) return;
 
@@ -1046,14 +1088,13 @@ resolve_control_flow(graph_allocator* self){
 
     while(range->next_sibling != NULL){
       live_range* sibling = range->next_sibling;
-      if((live_range_end(range) == live_range_start(sibling)) &&
-          range->assigned != sibling->assigned &&
-          !is_block(self, live_range_end(range))){
 
+      if((live_range_end(range) == live_range_start(sibling)) &&
+         !target_location_is_spill_slot(range, sibling->assigned) &&
+         (range->assigned != sibling->assigned) &&
+         !is_block(self, live_range_end(range))){
         add_move_at(self, live_range_start(sibling), sibling->assigned, range->assigned);
       }
-
-      range = sibling;
     }
 
     for(word i = 1; i < self->block_order.size; i++){

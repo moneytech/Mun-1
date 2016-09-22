@@ -7,6 +7,7 @@
 #include <mun/codegen/il_defs.h>
 #include <mun/codegen/il_core.h>
 #include <mun/object.h>
+#include <mun/codegen/il_entries.h>
 
 void
 graph_init(graph* self, function* func, graph_entry_instr* entry){
@@ -104,10 +105,10 @@ static void
 insert_phis(graph* g, object_buffer* assigned_vars, object_buffer* dominance, object_buffer* /* phi_instr* */ phis){
   word block_count = g->preorder.size;
 
-  object_buffer has_already;
+  object_buffer has_already; // word
   buffer_init(&has_already, block_count);
 
-  object_buffer work;
+  object_buffer work; // word
   buffer_init(&work, block_count);
 
   for(word block_index = 0; block_index < block_count; block_index++){
@@ -115,30 +116,30 @@ insert_phis(graph* g, object_buffer* assigned_vars, object_buffer* dominance, ob
     buffer_add(&work, word_clone(-1));
   }
 
-  object_buffer worklist;
-  buffer_init(&worklist, block_count);
+  object_buffer worklist; // block_entry_instr*
+  buffer_init(&worklist, 8);
 
   for(word var_index = 0; var_index < graph_variable_count(g); var_index++){
     for(word block_index = 0; block_index < block_count; block_index++){
-      if(bit_vector_contains(buffer_at(assigned_vars, block_index), var_index)){
+      if(bit_vector_contains(assigned_vars->data[block_index], var_index)){
         *((word*) work.data[block_index]) = var_index;
-        buffer_add(&worklist, buffer_at(&g->preorder, block_index));
+        buffer_add(&worklist, g->preorder.data[block_index]);
       }
     }
 
     while(!buffer_is_empty(&worklist)){
-      block_entry_instr* block = buffer_del_last(&worklist);
-
-      bit_vector_foreach(buffer_at(dominance, block->preorder_num)){
-        if((*((word*) buffer_at(&has_already, bit_vector_current))) < var_index){
-          block_entry_instr* b = buffer_at(&g->preorder, bit_vector_current);
-          phi_instr* phi = join_insert_phi(((join_entry_instr*) b), var_index, graph_variable_count(g));
+      block_entry_instr* current = buffer_del_last(&worklist);
+      bit_vector_foreach(dominance->data[current->preorder_num]){
+        word index = *((word*) it_current);
+        if((*((word*) has_already.data[index])) < var_index){
+          block_entry_instr* block = g->preorder.data[index];
+          phi_instr* phi = join_insert_phi(to_join_entry(((instruction*) block)), var_index, graph_variable_count(g));
           phi->alive = TRUE;
           buffer_add(phis, phi);
-          *((word*) has_already.data[bit_vector_current]) = var_index;
-          if((*((word*) work.data[bit_vector_current])) < var_index){
-            *((word*) work.data[bit_vector_current]) = var_index;
-            buffer_add(&worklist, b);
+          *((word*) has_already.data[index]) = var_index;
+          if((*((word*) work.data[index])) < var_index){
+            *((word*) work.data[index]) = var_index;
+            buffer_add(&worklist, block);
           }
         }
       }
@@ -227,11 +228,14 @@ graph_rename_recursive(graph* g, block_entry_instr* block, object_buffer* /* def
           word index = local_var_bit_index(sli->local, function_num_non_copied_params(((instance*) g->func)));
           result = sli->inputs[0]->defn;
 
+          /*
+           * TODO: Remove
           if(var_analysis_is_store_alive(var_liveness, block, sli)){
             env->data[index] = result;
           } else{
+            printf("Store Not Alive!\n");
             env->data[index] = c_null;
-          }
+          }*/
         } else if(instr_is(it, kLoadLocalTag)){
           load_local_instr* lli = to_load_local(it);
 
@@ -387,5 +391,136 @@ graph_discover_blocks(graph* g){
   word block_count = g->postorder.size;
   for(word i = 0; i < block_count; i++){
     buffer_add(&g->reverse_postorder, g->postorder.data[block_count - i - 1]);
+  }
+}
+
+static void
+insert_after(graph* g, instruction* prev, instruction* instr, bool value){
+  if(value){
+    graph_alloc_ssa_index(g, container_of(instr, definition, instr));
+  }
+
+  instr_insert_after(instr, prev);
+}
+
+MUN_INLINE void
+insert_before(graph* g, instruction* next, instruction* instr, bool value){
+  insert_after(g, next->prev, instr, value);
+}
+
+static void
+insert_conversion(graph* g, representation from, representation to, il_value* val, bool is_env_use){
+  instruction* before;
+
+  if(instr_is(val->instr, kPhiTag)){
+    before = block_predecessor_at(((block_entry_instr*) to_phi(((join_entry_instr*) val->instr))->block), val->index)->last;
+  } else{
+    before = val->instr;
+  }
+
+  definition* converted = NULL;
+  if((from == kTagged) && (to == kUnboxedNumber)){
+    converted = ((definition*) unbox_new(to, value_new(val->defn)));
+  } else if((to == kTagged) && (from == kUnboxedNumber)){
+    converted = ((definition*) box_new(from, value_new(val->defn)));
+  } else{
+    definition* boxed = ((definition*) box_new(from, value_new(val->defn)));
+    value_bind_to(val, boxed);
+    insert_before(g, before, ((instruction*) boxed), TRUE);
+    converted = ((definition*) unbox_new(to, value_new(boxed)));
+  }
+
+  insert_before(g, before, ((instruction*) converted), TRUE);
+  value_bind_to(val, converted);
+}
+
+static void
+convert_use(graph* g, il_value* val, representation from_rep){
+  representation to_rep = val->instr->get_input_representation(val->instr, val->index);
+  if((from_rep == to_rep) || (to_rep == kNone)){
+    return;
+  }
+  insert_conversion(g, from_rep, to_rep, val, FALSE);
+}
+
+static void
+insert_conversion_for(graph* g, definition* defn){
+  representation from_rep = ((instruction*) defn)->get_representation(((instruction*) defn));
+
+  for(il_value* input = defn->input_use_list;
+      input != NULL;
+      input = input->next){
+    convert_use(g, input, from_rep);
+  }
+}
+
+static void
+unbox_phi(phi_instr* phi){
+  bool should_unbox = FALSE;
+
+  for(word i = 0; i < instr_input_count(((instruction*) phi)); i++){
+    definition* input = instr_input_at(((instruction*) phi), i)->defn;
+    if(instr_is(((instruction*) input), kBoxTag)){
+      should_unbox = TRUE;
+    } else{
+      should_unbox = FALSE;
+      break;
+    }
+  }
+
+  if(should_unbox){
+    bool has_unboxed_use = FALSE;
+
+    for(il_value* use = ((definition*) phi)->input_use_list;
+        use != NULL;
+        use = use->next){
+
+      instruction* instr = use->instr;
+      if(instr_is(instr, kUnboxTag)){
+        has_unboxed_use = TRUE;
+        break;
+      }
+    }
+
+    if(!has_unboxed_use){
+      should_unbox = FALSE;
+    }
+  }
+
+  if(should_unbox){
+    phi->rep = kUnboxedNumber;
+  }
+}
+
+void
+graph_select_representations(graph* g){
+  for(int i = 0; i < g->reverse_postorder.size; i++){
+    block_entry_instr* block = g->reverse_postorder.data[i];
+    if(instr_is(((instruction*) block), kJoinEntryTag)){
+      phis_foreach(to_join_entry(((instruction*) block))){
+        phi_instr* phi = phis_current;
+        unbox_phi(phi);
+      }
+    }
+  }
+
+  for(word i = 0; i < g->graph_entry->initial_definitions.size; i++){
+    insert_conversion_for(g, g->graph_entry->initial_definitions.data[i]);
+  }
+
+  for(int i = 0; i < g->reverse_postorder.size; i++){
+    block_entry_instr* block = g->reverse_postorder.data[i];
+
+    if(instr_is(((instruction*) block), kJoinEntryTag)){
+      phis_foreach(to_join_entry(((instruction*) block))){
+        insert_conversion_for(g, ((definition*) phis_current));
+      }
+    }
+
+    forward_instr_iter(block, it){
+      if(it->is_def){
+        insert_conversion_for(g, container_of(it, definition, instr));
+      }
+    }
   }
 }

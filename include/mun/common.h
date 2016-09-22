@@ -67,6 +67,14 @@ static const word kBitsPerWord = sizeof(word) * 8;
 #error "Cannot determine CPU architecture"
 #endif
 
+#if defined(_WIN32)
+#define TARGET_IS_WIN 1
+#elif defined(__linux__) || defined(__FreeBSD__)
+#define TARGET_IS_LINUX 1
+#else
+#error "Unknown Operating System"
+#endif
+
 #ifndef container_of
 #define container_of(ptr_, type_, member_)({ \
   const typeof(((type_*) 0)->member_)* __mbptr = ((void*) ptr_); \

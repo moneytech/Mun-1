@@ -9,6 +9,7 @@ HEADER_BEGIN
 #include "../bitvec.h"
 #include "../buffer.h"
 #include "intermediate_language.h"
+#include "il_core.h"
 
 typedef struct _liveness_analysis{
   object_buffer live_out; // bit_vector*

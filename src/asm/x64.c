@@ -1,5 +1,8 @@
-#include <sys/mman.h>
 #include <mun/asm/core.h>
+
+#if defined(TARGET_IS_LINUX)
+#include <sys/mman.h>
+#endif
 
 MUN_INLINE void
 emit_register_rex(asm_buff* self, asm_register reg, uint8_t rex) {
@@ -627,7 +630,7 @@ asm_compile(asm_buff* self){
     fprintf(stderr, "Cannot finalize code:\tSize <= 0\n");
     abort();
   }
-
+#if defined(TARGET_IS_LINUX)
   void* chunk = mmap(0, ((size_t) asm_buff_size(self)), PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   if(chunk == MAP_FAILED){
     char buffer[256];
@@ -638,4 +641,12 @@ asm_compile(asm_buff* self){
 
   memcpy(chunk, ((void*) self->contents), ((size_t) asm_buff_size(self)));
   return chunk;
+#elif defined(TARGET_IS_WIN)
+  void* chunk = VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+  if(chunk == NULL) return NULL;
+  memcpy(chunk, ((void*) self->contents), ((size_t) asm_buff_size(self)));
+  return chunk;
+#else
+#error "Unknown Operating System"
+#endif
 }

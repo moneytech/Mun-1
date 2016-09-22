@@ -66,9 +66,29 @@ typedef struct _phi_instr{
   join_entry_instr* block;
   object_buffer inputs; // il_value*
   bit_vector* reaching;
+  representation rep;
 } phi_instr;
 
 phi_instr* phi_new(join_entry_instr* join, word num_inputs);
+
+typedef struct{
+  definition defn;
+
+  representation from;
+
+  il_value* input;
+} box_instr;
+
+box_instr* box_new(representation from, il_value* value);
+
+typedef struct{
+  definition defn;
+
+  representation to;
+  il_value* input;
+} unbox_instr;
+
+unbox_instr* unbox_new(representation to, il_value* value);
 
 #define to_return(i) container_of(container_of(i, definition, instr), return_instr, defn)
 #define to_constant(i) container_of(container_of(i, definition, instr), constant_instr, defn)
@@ -76,6 +96,8 @@ phi_instr* phi_new(join_entry_instr* join, word num_inputs);
 #define to_load_local(i) container_of(container_of(i, definition, instr), load_local_instr, defn)
 #define to_store_local(i) container_of(container_of(i, definition, instr), store_local_instr, defn)
 #define to_phi(i) container_of(container_of(i, definition, instr), phi_instr, defn)
+#define to_box(i) container_of(container_of(i, definition, instr), box_instr, defn)
+#define to_unbox(i) container_of(container_of(i, definition, instr), unbox_instr, defn)
 
 typedef struct{
   iterator iter;

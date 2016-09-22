@@ -30,6 +30,12 @@ void phi_compile(instruction* instr, asm_buff* code);
 location_summary* join_entry_make_loc_summary(instruction* instr);
 void join_entry_compile(instruction* instr, asm_buff* code);
 
+location_summary* box_make_loc_summary(instruction* instr);
+void box_compile(instruction* instr, asm_buff* code);
+
+location_summary* unbox_make_loc_summary(instruction* instr);
+void unbox_compile(instruction* instr, asm_buff* code);
+
 HEADER_END
 
 #endif

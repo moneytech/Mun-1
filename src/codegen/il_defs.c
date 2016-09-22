@@ -1,6 +1,7 @@
 #include <mun/buffer.h>
 #include <mun/codegen/intermediate_language.h>
 #include <mun/graph/graph_visitor.h>
+#include <mun/codegen/il_defs.h>
 
 static word
 return_input_count(instruction* instr){
@@ -119,6 +120,21 @@ binary_op_set_input_at(instruction* instr, word index, il_value* val){
   to_binary_op(instr)->inputs[index] = val;
 }
 
+static representation
+binary_op_get_input_representation(instruction* instr, word index){
+  return kUnboxedNumber;
+}
+
+static representation
+binary_op_get_representation(instruction* instr){
+  return kUnboxedNumber;
+}
+
+static void
+binary_op_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_binary_op(vis, instr);
+}
+
 binary_op_instr*
 binary_op_new(int oper, il_value* left, il_value* right){
   binary_op_instr* bop = malloc(sizeof(binary_op_instr));
@@ -134,10 +150,13 @@ binary_op_new(int oper, il_value* left, il_value* right){
       NULL, // get_block
       &binary_op_input_at, // input_at
       &binary_op_name, // name
+      &binary_op_accept, // accept
   };
   instr_init(((instruction*) bop), kBinaryOpTag, &ops);
   defn_init(((definition*) bop));
   bop->operation = oper;
+  ((instruction*) bop)->get_representation = &binary_op_get_representation;
+  ((instruction*) bop)->get_input_representation = &binary_op_get_input_representation;
   instr_set_input_at(((instruction*) bop), 0, left);
   instr_set_input_at(((instruction*) bop), 1, right);
   return bop;
@@ -163,13 +182,18 @@ load_local_set_input_at(instruction* instr, word index, il_value* val){
   //Fallthrough
 }
 
+static void
+load_local_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_load_local(vis, instr);
+}
+
 load_local_instr*
 load_local_new(local_variable* local){
   load_local_instr* lli = malloc(sizeof(load_local_instr));
   static instruction_ops ops = {
       &load_local_set_input_at, // set_input_at
       &load_local_compile, // emit_machine_code
-      NULL, // make_location_summary
+      &load_local_make_loc_summary, // make_location_summary
       NULL, // argument_at
       NULL, // argument_count
       &load_local_input_count, // input_count
@@ -178,6 +202,7 @@ load_local_new(local_variable* local){
       NULL, // get_block
       &load_local_input_at, // input_at
       &load_local_name, // name
+      &load_local_accept, // accept
   };
   instr_init(((instruction*) lli), kLoadLocalTag, &ops);
   defn_init(((definition*) lli));
@@ -206,6 +231,11 @@ store_local_set_input_at(instruction* instr, word index, il_value* val){
   to_store_local(instr)->inputs[index] = val;
 }
 
+static void
+store_local_accept(instruction* instr, graph_visitor* vis){
+  vis->visit_store_local(vis, instr);
+}
+
 store_local_instr*
 store_local_new(local_variable* local, il_value* val){
   store_local_instr* ssi = malloc(sizeof(store_local_instr));
@@ -221,6 +251,7 @@ store_local_new(local_variable* local, il_value* val){
       NULL, // get_block
       &store_local_input_at, // input_at
       &store_local_name, // name
+      &store_local_accept, // accept
   };
   instr_init(((instruction*) ssi), kStoreLocalTag, &ops);
   defn_init(((definition*) ssi));
@@ -251,6 +282,11 @@ phi_set_input_at(instruction* instr, word index, il_value* val){
   to_phi(instr)->inputs.data[index] = val;
 }
 
+static representation
+phi_get_representation(instruction* instr){
+  return to_phi(instr)->rep;
+}
+
 phi_instr*
 phi_new(join_entry_instr* join, word num_inputs){
   phi_instr* phi = malloc(sizeof(phi_instr));
@@ -272,11 +308,115 @@ phi_new(join_entry_instr* join, word num_inputs){
   phi->alive = FALSE;
   phi->reaching = NULL;
   phi->block = join;
+  ((instruction*) phi)->get_representation = &phi_get_representation;
   buffer_init(&phi->inputs, num_inputs);
   for(word i = 0; i < num_inputs; i++){
     buffer_add(&phi->inputs, NULL);
   }
   return phi;
+}
+
+static char*
+box_name(){
+  return "BoxInstr";
+}
+
+static word
+box_input_count(instruction* instr){
+  return 1;
+}
+
+static il_value*
+box_input_at(instruction* instr, word index){
+  return to_box(instr)->input;
+}
+
+static void
+box_set_input_at(instruction* instr, word index, il_value* value){
+  to_box(instr)->input = value;
+}
+
+static representation
+box_get_input_representation(instruction* instr, word index){
+  return to_box(instr)->from;
+}
+
+box_instr*
+box_new(representation from, il_value* value){
+  box_instr* box = malloc(sizeof(box_instr));
+  static instruction_ops ops = {
+      &box_set_input_at, // set_input_at
+      &box_compile, // emit_machine_code
+      &box_make_loc_summary, // make_location_summary
+      NULL, // argument_at
+      NULL, // argument_count
+      &box_input_count, // input_count
+      NULL, // successor_count
+      NULL, // successor_at
+      NULL, // get_block
+      &box_input_at, // input_at
+      &box_name, // name
+      NULL, // accept
+  };
+  instr_init(((instruction*) box), kBoxTag, &ops);
+  defn_init(((definition*) box));
+  box->input = value;
+  box->from = from;
+  ((instruction*) box)->get_input_representation = &box_get_input_representation;
+  instr_set_input_at(((instruction*) box), 0, value);
+  return box;
+}
+
+static char*
+unbox_name(){
+  return "UnboxInstr";
+}
+
+static word
+unbox_input_count(instruction* instr){
+  return 1;
+}
+
+static il_value*
+unbox_input_at(instruction* instr, word index){
+  return to_unbox(instr)->input;
+}
+
+static void
+unbox_set_input_at(instruction* instr, word index, il_value* value){
+  to_unbox(instr)->input = value;
+}
+
+
+static representation
+unbox_get_representation(instruction* instr){
+  return to_unbox(instr)->to;
+}
+
+unbox_instr*
+unbox_new(representation to, il_value* value){
+  unbox_instr* unbox = malloc(sizeof(unbox_instr));
+  static instruction_ops ops = {
+      &unbox_set_input_at, // set_input_at
+      &unbox_compile, // emit_machine_code
+      &unbox_make_loc_summary, // make_location_summary
+      NULL, // argument_at
+      NULL, // argument_count
+      &unbox_input_count, // input_count
+      NULL, // successor_count
+      NULL, // successor_at
+      NULL, // get_block
+      &unbox_input_at, // input_at
+      &unbox_name, // name
+      NULL, // accept
+  };
+  instr_init(((instruction*) unbox), kUnboxTag, &ops);
+  defn_init(((definition*) unbox));
+  unbox->to = to;
+  unbox->input = value;
+  ((instruction*) unbox)->get_representation = &unbox_get_representation;
+  instr_set_input_at(((instruction*) unbox), 0, value);
+  return unbox;
 }
 
 #define get_phit(it) container_of(it, phi_iterator, iter)

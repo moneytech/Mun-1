@@ -23,17 +23,11 @@ reaching_defs_init(reaching_defs* defs, graph* g){
   buffer_init(&defs->phis, 10);
 }
 
-MUN_INLINE bit_vector*
-reaching_defs_get(reaching_defs* defs, phi_instr* phi){
-  if(phi->reaching == NULL){
-
-  }
-}
-
 typedef struct{
   word num_of_regs;
   word spill_count;
   word vreg_count;
+  word cpu_spill_slot_count;
 
   location_kind kind;
 
@@ -51,6 +45,9 @@ typedef struct{
   object_buffer postorder; // block_entry_instr*
   object_buffer block_order; // block_entry_instr*
   object_buffer info; // block_info;
+  object_buffer spill_slots; // word
+  object_buffer quad_spill_slots; // bool
+  object_buffer untagged_spill_slots; // bool
 
   live_range* cpu_regs[kNumberOfCpuRegisters];
   bool blocked_cpu_regs[kNumberOfCpuRegisters];
@@ -62,6 +59,8 @@ typedef struct{
 
   reaching_defs reaching;
 } graph_allocator;
+
+static const word kDoubleSpillFactor = sizeof(double) / sizeof(word);
 
 void graph_alloc_init(graph_allocator* alloc, graph* flow_graph);
 void graph_alloc_regs(graph_allocator* alloc);

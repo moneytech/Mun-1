@@ -1,6 +1,7 @@
 #ifndef MUN_RA_VA_LIVENESS_H
 #define MUN_RA_VA_LIVENESS_H
 
+#include <mun/bitvec.h>
 #include "../common.h"
 
 HEADER_BEGIN
@@ -9,6 +10,7 @@ HEADER_BEGIN
 #include "ra_liveness.h"
 #include "../graph/graph.h"
 #include "../local.h"
+#include "il_defs.h"
 
 typedef struct{
   liveness_analysis analysis;
@@ -33,7 +35,9 @@ var_analysis_init(variable_analysis* analysis, graph* g){
 
 MUN_INLINE bool
 var_analysis_is_store_alive(variable_analysis* analysis, block_entry_instr* block, store_local_instr* store){
-  if(store->is_dead) return FALSE;
+  if(store->is_dead) {
+    return FALSE;
+  }
 
   if(store->is_last){
     word index = local_var_bit_index(store->local, analysis->params);

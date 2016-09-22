@@ -1,14 +1,15 @@
 #include <mun/codegen/ra_liveness.h>
+#include <mun/buffer.h>
 
 static bool
 liveness_update_live_out(liveness_analysis* analysis, block_entry_instr* block){
-  bit_vector* live_out = liveness_get_live_out(analysis, block);
+  bit_vector* live_out = analysis->live_out.data[block->postorder_num];
   bool changed = FALSE;
 
   instruction* last = block->last;
   for(word i = 0; i < instr_successor_count(last); i++){
     block_entry_instr* successor = instr_successor_at(last, i);
-    if(bit_vector_add_all(live_out, liveness_get_live_in(analysis, successor))){
+    if(bit_vector_add_all(live_out, analysis->live_in.data[successor->postorder_num])){
       changed = TRUE;
     }
   }

@@ -13,6 +13,8 @@
   V(phi) \
   V(parallel_move) \
   V(goto) \
-  V(block_entry)
+  V(block_entry) \
+  V(box) \
+  V(unbox)
 
 #endif

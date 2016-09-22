@@ -126,12 +126,13 @@ nil_new(){
 }
 
 void
-function_allocate_variables(instance* func){
-  function* f = to_function(func);
-  local_scope* scope = f->scope;
-  f->def.first_param_index = kParamEndSlotFromFp + f->def.num_params;
-  f->def.first_stack_local_index = kFirstLocalSlotFromFp;
-  f->def.num_copied_params = 0;
-  int next_free_frame_index = local_scope_alloc_vars(scope, ((int) f->def.first_param_index), ((int) f->def.num_params), ((int) f->def.first_stack_local_index));
-  f->def.num_stack_locals = f->def.first_stack_local_index - next_free_frame_index;
+function_allocate_variables(instance* inst){
+  function* func = to_function(inst);
+  func->def.first_param_index = kParamEndSlotFromFp + func->def.num_params;
+  func->def.first_stack_local_index = kFirstLocalSlotFromFp;
+  func->def.num_copied_params = 0;
+  int next_free_frame_index = local_scope_alloc_vars(func->scope, (int) func->def.first_param_index,
+                                                     (int) func->def.num_params,
+                                                     (int) func->def.first_stack_local_index);
+  func->def.num_stack_locals = func->def.first_stack_local_index - next_free_frame_index;
 }

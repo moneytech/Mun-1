@@ -44,8 +44,8 @@ bit_vector_kill_and_add(bit_vector* vec, bit_vector* kill, bit_vector* gen){
     const uword after = vec->data[i] | (gen->data[i] & ~kill->data[i]);
     if(before != after){
       changed = TRUE;
-      vec->data[i] = after;
     }
+    vec->data[i] = after;
   }
   return changed;
 }

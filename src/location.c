@@ -4,10 +4,13 @@
 
 enum{
   kBitsForKind = 4,
-  kBitsForPayload = sizeof(word) * 8 - kBitsForKind
+  kBitsForPayload = sizeof(word) * 8 - kBitsForKind,
+  kBitsForBaseReg = 5,
+  kBitsForStackIndex = kBitsForPayload - kBitsForBaseReg,
 };
 
 static const uword kLocationMask = 0x3;
+static const word kStackIndexBias = 1 << ((kBitsForPayload - 5) - 1);
 
 static const bit_field kPayloadField = {
     kBitsForKind,
@@ -21,6 +24,16 @@ static const bit_field kKindField = {
 
 static const bit_field kPolicyField = {
     0, 3
+};
+
+static const bit_field kStackSlotBaseField = {
+    0,
+    kBitsForBaseReg
+};
+
+static const bit_field kStackIndexField = {
+    kBitsForBaseReg,
+    kBitsForStackIndex
 };
 
 location_kind
@@ -79,6 +92,31 @@ loc_init_c(location* loc, constant_instr* obj){
   *loc = ((uword) obj) | kConstant;
 }
 
+MUN_INLINE uword
+encode_stack_index(word index){
+  return ((uword) kStackIndexBias + index);
+}
+
+void
+loc_init_z(location* loc, word slot){
+  uword payload = ((uword) bit_field_encode(&kStackSlotBaseField, FPREG) |
+                           bit_field_encode(&kStackIndexField, encode_stack_index(slot)));
+  *loc = allocated(kStackSlot, payload);
+}
+
+void
+loc_init_d(location* loc, word slot){
+  uword payload = ((uword) bit_field_encode(&kStackSlotBaseField, FPREG) |
+                           bit_field_encode(&kStackIndexField, encode_stack_index(slot)));
+  *loc = allocated(kDoubleStackSlot, payload);
+}
+
+void
+loc_init_zr(location* loc, word slot, asm_register base){
+  uword payload = ((uword) bit_field_encode(&kStackSlotBaseField, base) | bit_field_encode(&kStackIndexField, encode_stack_index(slot)));
+  *loc = allocated(kStackSlot, payload);
+}
+
 bool
 loc_is_constant(location loc){
   return (loc & kLocationMask) == kConstant;
@@ -102,6 +140,11 @@ loc_hint_rr(location* loc){
 void
 loc_hint_rx(location* loc){
   *loc = unallocated(kRequiresFpuRegister);
+}
+
+word
+loc_get_stack_slot(location loc){
+  return bit_field_decode(&kStackIndexField, loc_get_payload(loc)) - kStackIndexBias;
 }
 
 constant_instr*

@@ -27,6 +27,8 @@ typedef enum{
   kParallelMoveTag = 1 << 10,
   kGotoTag = 1 << 11,
   kParameterTag = 1 << 12,
+  kBoxTag = 1 << 13,
+  kUnboxTag = 1 << 14,
 } instruction_tag;
 
 typedef enum{
@@ -48,7 +50,7 @@ typedef struct{
   void (*set_input_at)(instruction*, word, il_value*);
   void (*emit_machine_code)(instruction*, asm_buff*);
 
-  location_summary* (*make_location_summary)(instruction* instr);
+  location_summary* (*make_location_summary)(instruction*);
 
   definition* (*argument_at)(instruction*, word);
 
@@ -69,8 +71,6 @@ struct _instruction{
   instruction* next;
   instruction* prev;
 
-  representation rep;
-
   bool is_def: 1;
   instruction_tag tag;
 
@@ -79,6 +79,9 @@ struct _instruction{
   instruction_ops* ops;
 
   location_summary* locations;
+
+  representation (*get_representation)(instruction*);
+  representation (*get_input_representation)(instruction*, word);
 };
 
 void instr_set_input_at(instruction* instr, word index, il_value* val);
@@ -123,8 +126,16 @@ instr_insert_before(instruction* instr, instruction* next){
 
 MUN_INLINE void
 instr_initialize_location_summary(instruction* instr){
-  printf("Initializing Location Summary For: '%s'\n", instr->ops->name());
   instr->locations = instr->ops->make_location_summary(instr);
+}
+
+MUN_INLINE void
+instr_accept(instruction* instr, graph_visitor* vis){
+  if(instr->ops->accept != NULL){
+    instr->ops->accept(instr, vis);
+  } else{
+    fprintf(stderr, "'%s': Doesn't Have #accept\n", instr->ops->name());
+  }
 }
 
 MUN_INLINE bool

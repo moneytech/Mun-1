@@ -35,12 +35,10 @@ evis_do(effect_visitor* self, definition* defn){
 
 void
 evis_add_instruction(effect_visitor* self, instruction* instr){
-  printf("Adding Instruction: %s, %s\n", instr->ops->name(), evis_is_empty(self) ? "true" : "false");
   graph_builder_dealloc_temps(self->owner, instr_input_count(instr));
   if(evis_is_empty(self)){
     self->entry = self->exit = instr;
   } else{
-    printf("Exit: %s\n", self->exit->ops->name());
     instr_link_to(self->exit, instr);
     self->exit = instr;
   }
@@ -76,7 +74,6 @@ evis_return_value(ast_node_visitor* vis, il_value* val){
 
 static void
 evis_return_definition(ast_node_visitor* vis, definition* defn){
-  printf("EVIS ReturnDefinition\n");
   if(!instr_is(((instruction*) defn), kConstantTag)){
     evis_do(get_evis(vis), defn);
   }
@@ -136,11 +133,15 @@ static void
 evis_visit_store_local(ast_node_visitor* vis, ast_node* node){
   value_visitor for_value;
   vvis_init(&for_value, get_evis(vis)->owner);
-  store_local_node* sln = to_store_local_node(node);
-  visit_ast(((ast_node_visitor*) &for_value), sln->value);
+  visit_ast(((ast_node_visitor*) &for_value), to_store_local_node(node)->value);
   evis_append(get_evis(vis), for_value.effect);
-  definition* store = ((definition*) store_local_new(sln->local, for_value.value));
-  vis_return_definition(vis, store);
+  definition* store = ((definition*) store_local_new(to_store_local_node(node)->local, for_value.value));
+  get_evis(vis)->return_definition(vis, store);
+}
+
+static void
+evis_visit_load_local(ast_node_visitor* vis, ast_node* node){
+  // Fallthrough
 }
 
 #define VISITOR self->visitor
@@ -156,6 +157,7 @@ evis_init(effect_visitor* self, graph_builder* owner){
   VISITOR.visit_sequence_node = &evis_visit_sequence;
   VISITOR.visit_return_node = &evis_visit_return;
   VISITOR.visit_binary_op_node = &evis_visit_binary_op;
+  VISITOR.visit_load_local_node = &evis_visit_load_local;
   VISITOR.visit_store_local_node = &evis_visit_store_local;
 }
 
@@ -172,16 +174,18 @@ vvis_return_definition(ast_node_visitor* vis, definition* defn){
   get_vvis(vis)->value = evis_bind(get_evis(vis), defn);
 }
 
+MUN_INLINE definition*
+build_load_local(local_variable* local){
+  if(local->value != NULL){
+    return ((definition*) constant_new(local->value));
+  } else{
+    return ((definition*) load_local_new(local));
+  }
+}
+
 static void
 vvis_visit_load_local(ast_node_visitor* vis, ast_node* node){
-  definition* load = NULL;
-  load_local_node* lln = to_load_local_node(node);
-  if(local_var_is_constant(lln->local)){
-    load = ((definition*) constant_new(lln->local->value));
-  } else{
-    load = ((definition*) load_local_new(lln->local));
-  }
-  get_vvis(vis)->effect.return_definition(vis, load);
+  get_evis(vis)->return_definition(vis, build_load_local(to_load_local_node(node)->local));
 }
 
 void

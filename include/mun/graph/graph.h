@@ -25,6 +25,7 @@ typedef struct _graph{
 void graph_init(graph* g, function* func, graph_entry_instr* entry);
 void graph_compute_ssa(graph* g, word next_vreg);
 void graph_discover_blocks(graph* g);
+void graph_select_representations(graph* g);
 
 MUN_INLINE word
 graph_alloc_ssa_temp(graph* g){

@@ -9,9 +9,9 @@ instr_insert_after(instruction* instr, instruction* prev){
   instr->next->prev = instr;
   instr->prev->next = instr;
 
-  for(word i = instr->ops->input_count(instr) - 1; i >= 0; i--){
-    il_value* use = instr->ops->input_at(instr, i);
-    defn_add_input_use(use->defn, use);
+  for(word i = instr_input_count(instr) - 1; i >= 0; i--){
+    il_value* input = instr_input_at(instr, i);
+    defn_add_input_use(input->defn, input);
   }
 }
 
@@ -43,14 +43,25 @@ instr_successor_count_(instruction* instr){
   return 0;
 }
 
+static representation
+instr_get_input_representation(instruction* instr, word index){
+  return kTagged;
+}
+
+static representation
+instr_get_representation(instruction* instr){
+  return kTagged;
+}
+
 void
 instr_init(instruction* instr, instruction_tag tag, instruction_ops* ops){
   instr->next = NULL;
   instr->prev = NULL;
-  instr->rep = kTagged;
   instr->ops = ops;
   instr->is_def = FALSE;
   instr->tag = tag;
+  instr->get_input_representation = &instr_get_input_representation;
+  instr->get_representation = &instr_get_representation;
   if(ops->successor_count == NULL) ops->successor_count = &instr_successor_count_;
 }
 
